@@ -14,6 +14,8 @@ import { OfertasModule } from './ofertas/ofertas.module';
 import { PostulacionesModule } from './postulaciones/postulaciones.module';
 import { PostulantesModule } from './postulantes/postulantes.module';
 import { dataSourceOptions } from './database/data-source';
+import { DashboardModule } from './dashboard/dashboard.module';
+import { ReportesModule } from './reportes/reportes.module';
 
 @Module({
   imports: [
@@ -30,6 +32,8 @@ import { dataSourceOptions } from './database/data-source';
     OfertasModule,
     PostulantesModule,
     PostulacionesModule,
+    DashboardModule,
+    ReportesModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
