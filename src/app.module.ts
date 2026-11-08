@@ -9,6 +9,8 @@ import { CatalogosModule } from './catalogos/catalogos.module';
 import { CommonModule } from './common/common.module';
 import { EmpresasModule } from './empresas/empresas.module';
 import { OfertasModule } from './ofertas/ofertas.module';
+import { PostulacionesModule } from './postulaciones/postulaciones.module';
+import { PostulantesModule } from './postulantes/postulantes.module';
 import { dataSourceOptions } from './database/data-source';
 
 @Module({
@@ -22,6 +24,8 @@ import { dataSourceOptions } from './database/data-source';
     CatalogosModule,
     EmpresasModule,
     OfertasModule,
+    PostulantesModule,
+    PostulacionesModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
