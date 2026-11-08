@@ -120,9 +120,12 @@ async function seed() {
     }
   }
 
-  await dataSource
-    .getRepository(Configuracion)
-    .upsert({ clave: 'LIMITE_OFERTAS_ACTIVAS', valor: '5' }, ['clave']);
+  // Solo el valor inicial: no debe pisar lo que GADOR haya configurado.
+  const configuraciones = dataSource.getRepository(Configuracion);
+  const clave = 'LIMITE_OFERTAS_ACTIVAS';
+  if (!(await configuraciones.existsBy({ clave }))) {
+    await configuraciones.save({ clave, valor: '5' });
+  }
 
   const email = process.env.ADMIN_EMAIL?.trim().toLowerCase();
   const password = process.env.ADMIN_PASSWORD;

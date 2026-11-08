@@ -30,8 +30,7 @@ export function puedeCambiarOferta(
   de: EstadoOferta,
   a: EstadoOferta,
 ): boolean {
-  const tabla =
-    actor === 'GADOR' ? TRANSICIONES_GADOR : TRANSICIONES_EMPRESA;
+  const tabla = actor === 'GADOR' ? TRANSICIONES_GADOR : TRANSICIONES_EMPRESA;
   return tabla[de].includes(a);
 }
 

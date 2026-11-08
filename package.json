@@ -21,7 +21,10 @@
     "migration:generate": "npm run typeorm -- migration:generate src/database/migrations/Esquema",
     "migration:run": "npm run typeorm -- migration:run",
     "seed": "ts-node src/database/seed.ts",
-    "seed:demo": "ts-node src/database/seed-demo.ts"
+    "seed:demo": "ts-node src/database/seed-demo.ts",
+    "migration:run:prod": "typeorm -d dist/database/data-source.js migration:run",
+    "seed:prod": "node dist/database/seed.js",
+    "seed:demo:prod": "node dist/database/seed-demo.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1164.0",
@@ -99,5 +102,8 @@
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
+  },
+  "overrides": {
+    "multer": "2.5.0"
   }
 }
