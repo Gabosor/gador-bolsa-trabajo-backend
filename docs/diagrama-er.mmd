@@ -1,0 +1,191 @@
+erDiagram
+  audit_logs {
+    integer id PK
+    integer user_id
+    enum accion
+    character_varying tabla_afectada
+    integer registro_id
+    jsonb datos_anteriores
+    jsonb datos_nuevos
+    character_varying ip
+    timestamp_with_time_zone fecha
+  }
+  catalogos {
+    integer id PK
+    enum tipo
+    character_varying nombre
+    boolean activo
+    integer parent_id FK
+  }
+  configuraciones {
+    character_varying clave PK
+    character_varying valor
+  }
+  empresas {
+    integer id PK
+    character_varying nit
+    character_varying razon_social
+    character_varying representante_legal
+    character_varying ci_representante
+    character_varying celular
+    character_varying email_corporativo
+    character_varying direccion
+    character_varying logo_key
+    text descripcion
+    character_varying documento_nit_key
+    character_varying documento_legal_key
+    enum estado
+    text motivo_rechazo
+    timestamp_with_time_zone created_at
+    integer user_id FK
+    integer rubro_id FK
+  }
+  experiencias {
+    integer id PK
+    character_varying empresa
+    character_varying cargo
+    integer anios
+    text descripcion
+    integer profile_id FK
+  }
+  favoritos {
+    integer id PK
+    timestamp_with_time_zone created_at
+    integer profile_id FK
+    integer oferta_id FK
+  }
+  formaciones {
+    integer id PK
+    character_varying institucion
+    integer anio_titulacion
+    character_varying nro_titulo_nacional
+    integer profile_id FK
+    integer profesion_id FK
+  }
+  habilidades {
+    integer id PK
+    character_varying nombre
+    boolean activo
+  }
+  notificaciones {
+    integer id PK
+    character_varying titulo
+    text mensaje
+    boolean leida
+    timestamp_with_time_zone created_at
+    integer user_id FK
+  }
+  oferta_habilidad {
+    integer id PK
+    boolean obligatoria
+    integer nivel_minimo
+    integer oferta_id FK
+    integer habilidad_id FK
+  }
+  oferta_profesion {
+    integer oferta_id PK,FK
+    integer profesion_id PK,FK
+  }
+  ofertas {
+    integer id PK
+    character_varying titulo
+    text descripcion
+    text requisitos_obligatorios
+    text requisitos_deseables
+    integer anios_experiencia
+    integer salario_min
+    integer salario_max
+    boolean salario_a_tratar
+    text beneficios
+    date fecha_cierre
+    integer numero_plazas
+    enum estado
+    text motivo_rechazo
+    integer total_vistas
+    boolean aviso_cierre_enviado
+    timestamp_with_time_zone created_at
+    timestamp_with_time_zone updated_at
+    integer empresa_id FK
+    integer tipo_contrato_id FK
+    integer modalidad_id FK
+    integer municipio_id FK
+  }
+  postulaciones {
+    integer id PK
+    enum estado
+    integer porcentaje_match
+    timestamp_with_time_zone created_at
+    timestamp_with_time_zone updated_at
+    integer oferta_id FK
+    integer postulante_id FK
+  }
+  postulante_habilidad {
+    integer id PK
+    integer nivel
+    integer profile_id FK
+    integer habilidad_id FK
+  }
+  postulante_profiles {
+    integer id PK
+    character_varying foto_key
+    character_varying direccion
+    date fecha_nacimiento
+    character_varying cv_key
+    jsonb idiomas
+    integer porcentaje_completitud
+    integer user_id FK
+  }
+  push_subscriptions {
+    integer id PK
+    text endpoint
+    character_varying p256dh
+    character_varying auth
+    integer user_id FK
+  }
+  roles {
+    integer id PK
+    character_varying nombre
+  }
+  users {
+    integer id PK
+    character_varying nombre_completo
+    character_varying ci
+    character_varying email
+    character_varying celular
+    character_varying password
+    boolean is_active
+    integer failed_attempts
+    timestamp_with_time_zone locked_until
+    boolean phone_verified
+    character_varying otp_hash
+    timestamp_with_time_zone otp_expires_at
+    character_varying reset_token_hash
+    timestamp_with_time_zone reset_expires_at
+    timestamp_with_time_zone created_at
+    timestamp_with_time_zone updated_at
+    integer role_id FK
+  }
+  catalogos ||--o{ catalogos : "parent_id"
+  catalogos ||--o{ empresas : "rubro_id"
+  users ||--o| empresas : "user_id"
+  postulante_profiles ||--o{ experiencias : "profile_id"
+  ofertas ||--o{ favoritos : "oferta_id"
+  postulante_profiles ||--o{ favoritos : "profile_id"
+  catalogos ||--o{ formaciones : "profesion_id"
+  postulante_profiles ||--o{ formaciones : "profile_id"
+  users ||--o{ notificaciones : "user_id"
+  habilidades ||--o{ oferta_habilidad : "habilidad_id"
+  ofertas ||--o{ oferta_habilidad : "oferta_id"
+  ofertas ||--o{ oferta_profesion : "oferta_id"
+  catalogos ||--o{ oferta_profesion : "profesion_id"
+  empresas ||--o{ ofertas : "empresa_id"
+  catalogos ||--o{ ofertas : "modalidad_id"
+  catalogos ||--o{ ofertas : "municipio_id"
+  catalogos ||--o{ ofertas : "tipo_contrato_id"
+  ofertas ||--o{ postulaciones : "oferta_id"
+  postulante_profiles ||--o{ postulaciones : "postulante_id"
+  habilidades ||--o{ postulante_habilidad : "habilidad_id"
+  postulante_profiles ||--o{ postulante_habilidad : "profile_id"
+  users ||--o| postulante_profiles : "user_id"
+  users ||--o{ push_subscriptions : "user_id"
+  roles ||--o{ users : "role_id"

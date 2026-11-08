@@ -67,11 +67,7 @@ export class NotificacionesService {
         .select('DISTINCT u.id', 'id')
         .innerJoin(PostulanteProfile, 'p', 'p.user_id = u.id')
         .innerJoin(Formacion, 'f', 'f.profile_id = p.id')
-        .innerJoin(
-          'oferta_profesion',
-          'op',
-          'op.profesion_id = f.profesion_id',
-        )
+        .innerJoin('oferta_profesion', 'op', 'op.profesion_id = f.profesion_id')
         .where('op.oferta_id = :ofertaId', { ofertaId })
         .getRawMany<{ id: number }>();
       for (const fila of filas) {

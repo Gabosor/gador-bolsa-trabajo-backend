@@ -359,7 +359,11 @@ export class OfertasService {
       oferta.salarioMin = null;
       oferta.salarioMax = null;
     } else {
-      if (!dto.salarioMin || !dto.salarioMax || dto.salarioMin > dto.salarioMax) {
+      if (
+        !dto.salarioMin ||
+        !dto.salarioMax ||
+        dto.salarioMin > dto.salarioMax
+      ) {
         throw new BadRequestException(
           'Indica un rango de salario válido o marca "A tratar"',
         );

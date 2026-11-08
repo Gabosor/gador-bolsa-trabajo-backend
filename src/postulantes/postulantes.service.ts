@@ -177,7 +177,10 @@ export class PostulantesService {
     if (new Set(ids).size !== ids.length) {
       throw new BadRequestException('Hay habilidades repetidas');
     }
-    const validas = await this.habilidades.findBy({ id: In(ids), activo: true });
+    const validas = await this.habilidades.findBy({
+      id: In(ids),
+      activo: true,
+    });
     if (validas.length !== ids.length) {
       throw new BadRequestException('Alguna habilidad no es válida');
     }
