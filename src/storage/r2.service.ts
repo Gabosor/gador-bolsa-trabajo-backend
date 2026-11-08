@@ -49,9 +49,14 @@ export class R2Service {
 
   constructor(config: ConfigService) {
     this.bucket = config.get<string>('R2_BUCKET');
+    // Acepta el id de la cuenta o la URL completa del endpoint de Cloudflare.
+    const cuenta = config.get<string>('R2_ACCOUNT_ID') ?? '';
     this.client = new S3Client({
       region: 'auto',
-      endpoint: `https://${config.get('R2_ACCOUNT_ID')}.r2.cloudflarestorage.com`,
+      endpoint: cuenta.startsWith('http')
+        ? cuenta
+        : `https://${cuenta}.r2.cloudflarestorage.com`,
+      forcePathStyle: true,
       credentials: {
         accessKeyId: config.get<string>('R2_ACCESS_KEY_ID') ?? '',
         secretAccessKey: config.get<string>('R2_SECRET_ACCESS_KEY') ?? '',

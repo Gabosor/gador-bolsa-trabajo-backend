@@ -26,7 +26,7 @@ import {
   VerifyOtpDto,
 } from './dto/auth.dto';
 
-const COSTO_BCRYPT = 12;
+export const COSTO_BCRYPT = 12;
 const MAX_INTENTOS = 5;
 const MINUTO = 60 * 1000;
 
