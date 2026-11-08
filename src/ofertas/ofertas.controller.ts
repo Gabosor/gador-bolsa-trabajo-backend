@@ -15,6 +15,7 @@ import { Auth, GetUser } from '../auth/decorators/auth.decorator';
 import { Roles } from '../common/enums';
 import { User } from '../users/entities/user.entity';
 import {
+  BuscarOfertasDto,
   CambiarEstadoOfertaDto,
   FiltroOfertasDto,
   GuardarOfertaDto,
@@ -41,6 +42,16 @@ export class OfertasController {
   @Auth(Roles.SuperAdmin)
   revision(@Query() filtro: FiltroOfertasDto) {
     return this.ofertas.listarRevision(filtro);
+  }
+
+  @Get()
+  buscar(@Query() filtro: BuscarOfertasDto) {
+    return this.ofertas.buscar(filtro);
+  }
+
+  @Get(':id')
+  detalle(@Param('id', ParseIntPipe) id: number) {
+    return this.ofertas.detallePublico(id);
   }
 
   @Post()
