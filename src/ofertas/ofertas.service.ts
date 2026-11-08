@@ -23,6 +23,7 @@ import { paginado } from '../common/pagination.dto';
 import { EmpresasService } from '../empresas/empresas.service';
 import { Empresa } from '../empresas/entities/empresa.entity';
 import { Postulacion } from '../postulaciones/entities/postulacion.entity';
+import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import { R2Service } from '../storage/r2.service';
 import { User } from '../users/entities/user.entity';
 import {
@@ -52,6 +53,7 @@ export class OfertasService {
     private readonly catalogos: CatalogosService,
     private readonly audit: AuditService,
     private readonly r2: R2Service,
+    private readonly notificaciones: NotificacionesService,
   ) {}
 
   async crear(userId: number, dto: GuardarOfertaDto, ip: string) {
@@ -211,6 +213,10 @@ export class OfertasService {
         manager,
       );
     });
+    if (nuevo === EstadoOferta.Publicada) {
+      // No se espera: los avisos no deben demorar la respuesta a GADOR.
+      void this.notificaciones.avisarNuevaOferta(id, oferta.titulo);
+    }
     return { id, estado: nuevo };
   }
 

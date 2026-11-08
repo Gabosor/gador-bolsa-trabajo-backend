@@ -13,9 +13,15 @@ import {
   EstadoEmpresa,
   EstadoOferta,
   EstadoPostulacion,
+  Roles,
 } from '../common/enums';
 import { hoyBolivia } from '../common/fechas';
 import { paginado, PaginationDto } from '../common/pagination.dto';
+import { EmpresasService } from '../empresas/empresas.service';
+import { NotificacionesService } from '../notificaciones/notificaciones.service';
+import { R2Service } from '../storage/r2.service';
+import { User } from '../users/entities/user.entity';
+import { puedeCambiarPostulacion } from './postulacion-estados';
 import { Favorito } from '../ofertas/entities/favorito.entity';
 import { Oferta } from '../ofertas/entities/oferta.entity';
 import { perfilPuedePostular } from '../postulantes/completitud';
@@ -33,6 +39,9 @@ export class PostulacionesService {
     private readonly favoritos: Repository<Favorito>,
     private readonly dataSource: DataSource,
     private readonly postulantes: PostulantesService,
+    private readonly empresas: EmpresasService,
+    private readonly notificaciones: NotificacionesService,
+    private readonly r2: R2Service,
     private readonly audit: AuditService,
   ) {}
 
@@ -194,6 +203,156 @@ export class PostulacionesService {
       oferta: { id: ofertaId },
     });
     return { mensaje: 'Quitada de favoritos' };
+  }
+
+  /** Postulantes de una oferta, ordenados por % MATCH (RF11). */
+  async postulantesDeOferta(userId: number, ofertaId: number) {
+    const empresa = await this.empresas.deUsuario(userId);
+    this.empresas.exigirAprobada(empresa);
+    const oferta = await this.ofertas.findOneBy({
+      id: ofertaId,
+      empresa: { id: empresa.id },
+    });
+    if (!oferta) throw new NotFoundException('Oferta no encontrada');
+
+    const postulaciones = await this.postulaciones.find({
+      where: { oferta: { id: ofertaId } },
+      relations: {
+        postulante: { user: true, formaciones: true, experiencias: true },
+      },
+      order: { porcentajeMatch: 'DESC', createdAt: 'ASC' },
+    });
+    const postulantes = await Promise.all(
+      postulaciones.map(async (p) => ({
+        id: p.id,
+        estado: p.estado,
+        porcentajeMatch: p.porcentajeMatch,
+        nombre: p.postulante.user.nombreCompleto,
+        fotoUrl: p.postulante.fotoKey
+          ? await this.r2.getSignedUrl(p.postulante.fotoKey)
+          : null,
+        profesion: p.postulante.formaciones[0]?.profesion.nombre ?? null,
+        aniosExperiencia: p.postulante.experiencias.reduce(
+          (suma, e) => suma + e.anios,
+          0,
+        ),
+      })),
+    );
+    return { oferta: { id: oferta.id, titulo: oferta.titulo }, postulantes };
+  }
+
+  /**
+   * Perfil completo y URL del CV. Solo para la empresa de la oferta o GADOR.
+   * Cuando lo abre la empresa, la postulación pasa a VISTO y se avisa (RF12).
+   */
+  async verPerfil(user: User, id: number, ip: string) {
+    const postulacion = await this.cargarConDuenio(id);
+    const esEmpresa = user.role.nombre === (Roles.Empresa as string);
+    if (esEmpresa) await this.exigirDuenio(user.id, postulacion);
+
+    const perfil = await this.postulantes.conUrls(
+      await this.postulantes.deUsuario(postulacion.postulante.user.id),
+    );
+    if (esEmpresa && postulacion.estado === EstadoPostulacion.Postulado) {
+      await this.transicionar(
+        postulacion,
+        EstadoPostulacion.Visto,
+        user.id,
+        ip,
+      );
+    }
+    const { nombreCompleto, email, ci, celular } = perfil.user;
+    return {
+      postulacion: {
+        id: postulacion.id,
+        estado: postulacion.estado,
+        porcentajeMatch: postulacion.porcentajeMatch,
+      },
+      perfil: { ...perfil, user: { nombreCompleto, email, ci, celular } },
+    };
+  }
+
+  async cambiarEstado(
+    userId: number,
+    id: number,
+    estado: EstadoPostulacion,
+    ip: string,
+  ) {
+    const postulacion = await this.cargarConDuenio(id);
+    await this.exigirDuenio(userId, postulacion);
+    if (!puedeCambiarPostulacion(postulacion.estado, estado)) {
+      throw new BadRequestException(
+        `No se puede pasar de ${postulacion.estado} a ${estado}`,
+      );
+    }
+    await this.transicionar(postulacion, estado, userId, ip);
+    return { id, estado };
+  }
+
+  private cargarConDuenio(id: number) {
+    return this.postulaciones
+      .findOne({
+        where: { id },
+        relations: {
+          oferta: { empresa: true },
+          postulante: { user: true },
+        },
+      })
+      .then((postulacion) => {
+        if (!postulacion) {
+          throw new NotFoundException('Postulación no encontrada');
+        }
+        return postulacion;
+      });
+  }
+
+  private async exigirDuenio(userId: number, postulacion: Postulacion) {
+    const empresa = await this.empresas.deUsuario(userId);
+    this.empresas.exigirAprobada(empresa);
+    if (postulacion.oferta.empresa.id !== empresa.id) {
+      throw new NotFoundException('Postulación no encontrada');
+    }
+  }
+
+  /** Cambia el estado con auditoría y luego avisa al postulante. */
+  private async transicionar(
+    postulacion: Postulacion,
+    nuevo: EstadoPostulacion,
+    userId: number,
+    ip: string,
+  ) {
+    const anterior = postulacion.estado;
+    postulacion.estado = nuevo;
+    await this.dataSource.transaction(async (manager) => {
+      await manager.update(Postulacion, postulacion.id, { estado: nuevo });
+      await this.audit.log(
+        {
+          userId,
+          accion: AccionAudit.ChangeStatus,
+          tabla: 'postulaciones',
+          registroId: postulacion.id,
+          anteriores: { estado: anterior },
+          nuevos: { estado: nuevo },
+          ip,
+        },
+        manager,
+      );
+    });
+    const { titulo } = postulacion.oferta;
+    const destino = postulacion.postulante.user.id;
+    if (nuevo === EstadoPostulacion.Visto) {
+      await this.notificaciones.notificar(
+        destino,
+        'Una empresa vio tu CV',
+        `${postulacion.oferta.empresa.razonSocial} revisó tu postulación a "${titulo}".`,
+      );
+    } else {
+      await this.notificaciones.notificar(
+        destino,
+        'Tu postulación cambió de estado',
+        `Tu postulación a "${titulo}" ahora está en: ${nuevo}.`,
+      );
+    }
   }
 
   private async ofertaDisponible(id: number): Promise<Oferta> {
