@@ -1,13 +1,16 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
   Ip,
   Param,
   ParseIntPipe,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
+import { CambiarEstadoPostulacionDto } from './dto/postulacion.dto';
 import { Auth, GetUser } from '../auth/decorators/auth.decorator';
 import { Roles } from '../common/enums';
 import { PaginationDto } from '../common/pagination.dto';
@@ -56,6 +59,36 @@ export class PostulacionesController {
     @Ip() ip: string,
   ) {
     return this.postulaciones.postular(user.id, ofertaId, ip);
+  }
+
+  @Get('oferta/:ofertaId')
+  @Auth(Roles.Empresa)
+  postulantesDeOferta(
+    @GetUser() user: User,
+    @Param('ofertaId', ParseIntPipe) ofertaId: number,
+  ) {
+    return this.postulaciones.postulantesDeOferta(user.id, ofertaId);
+  }
+
+  @Get(':id/perfil')
+  @Auth(Roles.Empresa, Roles.SuperAdmin)
+  verPerfil(
+    @GetUser() user: User,
+    @Param('id', ParseIntPipe) id: number,
+    @Ip() ip: string,
+  ) {
+    return this.postulaciones.verPerfil(user, id, ip);
+  }
+
+  @Patch(':id/estado')
+  @Auth(Roles.Empresa)
+  cambiarEstado(
+    @GetUser() user: User,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CambiarEstadoPostulacionDto,
+    @Ip() ip: string,
+  ) {
+    return this.postulaciones.cambiarEstado(user.id, id, dto.estado, ip);
   }
 
   @Delete(':id')

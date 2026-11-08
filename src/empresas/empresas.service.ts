@@ -17,7 +17,7 @@ import {
   Roles,
   TipoCatalogo,
 } from '../common/enums';
-import { MailService } from '../common/mail.service';
+import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import { paginado } from '../common/pagination.dto';
 import { R2Service } from '../storage/r2.service';
 import { Role } from '../users/entities/role.entity';
@@ -54,7 +54,7 @@ export class EmpresasService {
     private readonly catalogos: CatalogosService,
     private readonly r2: R2Service,
     private readonly audit: AuditService,
-    private readonly mail: MailService,
+    private readonly notificaciones: NotificacionesService,
   ) {}
 
   async registrar(
@@ -176,7 +176,10 @@ export class EmpresasService {
     adminId: number,
     ip: string,
   ) {
-    const empresa = await this.empresas.findOneBy({ id });
+    const empresa = await this.empresas.findOne({
+      where: { id },
+      relations: { user: true },
+    });
     if (!empresa) throw new NotFoundException('Empresa no encontrada');
     const anterior = empresa.estado;
     if (!TRANSICIONES[anterior].includes(dto.estado)) {
@@ -210,12 +213,14 @@ export class EmpresasService {
     const motivo = empresa.motivoRechazo
       ? ` Motivo: ${empresa.motivoRechazo}`
       : '';
-    await this.mail.enviar(
-      empresa.emailCorporativo,
-      'Estado de tu empresa - Bolsa de Trabajo GADOR',
-      `GADOR actualizó el estado de ${empresa.razonSocial} a ${dto.estado}.${motivo}`,
+    await this.notificaciones.notificar(
+      empresa.user.id,
+      'GADOR revisó tu empresa',
+      `El estado de ${empresa.razonSocial} ahora es ${dto.estado}.${motivo}`,
     );
-    return empresa;
+    const { user, ...datos } = empresa;
+    void user;
+    return datos;
   }
 
   private async conUrls(empresa: Empresa) {
