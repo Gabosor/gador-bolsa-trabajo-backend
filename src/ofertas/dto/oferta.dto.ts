@@ -105,6 +105,35 @@ export class CambiarEstadoOfertaDto {
   motivo?: string;
 }
 
+/** Filtros del buscador público (RF03). */
+export class BuscarOfertasDto extends PaginationDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  q?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  profesionId?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  municipioId?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  modalidadId?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  salarioMin?: number;
+}
+
 export class FiltroOfertasDto extends PaginationDto {
   @IsOptional()
   @IsEnum(EstadoOferta)

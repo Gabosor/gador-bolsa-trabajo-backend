@@ -11,15 +11,22 @@ import { AuditService } from '../auditoria/audit.service';
 import { CatalogosService } from '../catalogos/catalogos.service';
 import { Configuracion } from '../catalogos/entities/configuracion.entity';
 import { Habilidad } from '../catalogos/entities/habilidad.entity';
-import { AccionAudit, EstadoOferta, TipoCatalogo } from '../common/enums';
+import {
+  AccionAudit,
+  EstadoEmpresa,
+  EstadoOferta,
+  Roles,
+  TipoCatalogo,
+} from '../common/enums';
 import { hoyBolivia } from '../common/fechas';
 import { paginado } from '../common/pagination.dto';
 import { EmpresasService } from '../empresas/empresas.service';
 import { Empresa } from '../empresas/entities/empresa.entity';
 import { Postulacion } from '../postulaciones/entities/postulacion.entity';
-import { Roles } from '../common/enums';
+import { R2Service } from '../storage/r2.service';
 import { User } from '../users/entities/user.entity';
 import {
+  BuscarOfertasDto,
   CambiarEstadoOfertaDto,
   FiltroOfertasDto,
   GuardarOfertaDto,
@@ -44,6 +51,7 @@ export class OfertasService {
     private readonly empresas: EmpresasService,
     private readonly catalogos: CatalogosService,
     private readonly audit: AuditService,
+    private readonly r2: R2Service,
   ) {}
 
   async crear(userId: number, dto: GuardarOfertaDto, ip: string) {
@@ -204,6 +212,93 @@ export class OfertasService {
       );
     });
     return { id, estado: nuevo };
+  }
+
+  /** Buscador público: solo ofertas visibles para los postulantes (RF03). */
+  async buscar(filtro: BuscarOfertasDto) {
+    const qb = this.consultaPublica();
+    if (filtro.q?.trim()) {
+      const texto = filtro.q.trim().replace(/[%_\\]/g, '\\$&');
+      qb.andWhere('(o.titulo ILIKE :q OR o.descripcion ILIKE :q)', {
+        q: `%${texto}%`,
+      });
+    }
+    if (filtro.profesionId) {
+      qb.andWhere(
+        'EXISTS (SELECT 1 FROM oferta_profesion op WHERE op.oferta_id = o.id AND op.profesion_id = :profesionId)',
+        { profesionId: filtro.profesionId },
+      );
+    }
+    if (filtro.municipioId) {
+      qb.andWhere('municipio.id = :municipioId', {
+        municipioId: filtro.municipioId,
+      });
+    }
+    if (filtro.modalidadId) {
+      qb.andWhere('modalidad.id = :modalidadId', {
+        modalidadId: filtro.modalidadId,
+      });
+    }
+    if (filtro.salarioMin) {
+      // Las ofertas "a tratar" no se descartan: su salario no se conoce.
+      qb.andWhere('(o.salarioATratar = true OR o.salarioMax >= :salario)', {
+        salario: filtro.salarioMin,
+      });
+    }
+    const [ofertas, total] = await qb
+      .orderBy('o.createdAt', 'DESC')
+      .skip((filtro.page - 1) * filtro.limit)
+      .take(filtro.limit)
+      .getManyAndCount();
+    const data = await Promise.all(ofertas.map((o) => this.vistaPublica(o)));
+    return paginado(data, total, filtro);
+  }
+
+  /** Detalle público; cada apertura suma una vista (RF09). */
+  async detallePublico(id: number) {
+    const oferta = await this.consultaPublica()
+      .leftJoinAndSelect('o.habilidades', 'oh')
+      .leftJoinAndSelect('oh.habilidad', 'habilidad')
+      .andWhere('o.id = :id', { id })
+      .getOne();
+    if (!oferta) throw new NotFoundException('Oferta no disponible');
+    await this.ofertas.increment({ id }, 'totalVistas', 1);
+    return this.vistaPublica(oferta);
+  }
+
+  private consultaPublica() {
+    return this.ofertas
+      .createQueryBuilder('o')
+      .innerJoinAndSelect('o.empresa', 'empresa')
+      .leftJoinAndSelect('empresa.rubro', 'rubro')
+      .leftJoinAndSelect('o.tipoContrato', 'tipoContrato')
+      .leftJoinAndSelect('o.modalidad', 'modalidad')
+      .leftJoinAndSelect('o.municipio', 'municipio')
+      .leftJoinAndSelect('o.profesiones', 'profesiones')
+      .where('o.estado = :publicada', { publicada: EstadoOferta.Publicada })
+      .andWhere('o.fechaCierre >= :hoy', { hoy: hoyBolivia() })
+      .andWhere('empresa.estado = :aprobada', {
+        aprobada: EstadoEmpresa.Aprobada,
+      });
+  }
+
+  /** Quita de la respuesta pública el NIT, el CI y los datos internos. */
+  private async vistaPublica(oferta: Oferta) {
+    const { empresa, motivoRechazo, avisoCierreEnviado, ...resto } = oferta;
+    void motivoRechazo;
+    void avisoCierreEnviado;
+    return {
+      ...resto,
+      empresa: {
+        id: empresa.id,
+        razonSocial: empresa.razonSocial,
+        rubro: empresa.rubro,
+        descripcion: empresa.descripcion,
+        logoUrl: empresa.logoKey
+          ? await this.r2.getSignedUrl(empresa.logoKey, 3600)
+          : null,
+      },
+    };
   }
 
   private async propia(userId: number, id: number): Promise<Oferta> {
