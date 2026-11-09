@@ -17,6 +17,7 @@ import {
   Roles,
   TipoCatalogo,
 } from '../common/enums';
+import { NOMBRE_ESTADO_EMPRESA } from '../common/etiquetas';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import { paginado } from '../common/pagination.dto';
 import { R2Service } from '../storage/r2.service';
@@ -216,7 +217,8 @@ export class EmpresasService {
     await this.notificaciones.notificar(
       empresa.user.id,
       'GADOR revisó tu empresa',
-      `El estado de ${empresa.razonSocial} ahora es ${dto.estado}.${motivo}`,
+      `${empresa.razonSocial} ahora está ${NOMBRE_ESTADO_EMPRESA[dto.estado]}.${motivo}`,
+      { url: '/empresa/ofertas', whatsapp: true },
     );
     const { user, ...datos } = empresa;
     void user;

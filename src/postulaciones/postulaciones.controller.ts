@@ -51,6 +51,15 @@ export class PostulacionesController {
     return this.postulaciones.quitarFavorito(user.id, ofertaId);
   }
 
+  @Get('compatibilidad/:ofertaId')
+  @Auth(Roles.Postulante)
+  compatibilidad(
+    @GetUser() user: User,
+    @Param('ofertaId', ParseIntPipe) ofertaId: number,
+  ) {
+    return this.postulaciones.compatibilidad(user.id, ofertaId);
+  }
+
   @Post('oferta/:ofertaId')
   @Auth(Roles.Postulante)
   postular(

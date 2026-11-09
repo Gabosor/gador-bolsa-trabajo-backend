@@ -2,7 +2,7 @@
 
 Backend del sistema de la Gobernación de Oruro. Conecta postulantes con empresas validadas por GADOR, con trazabilidad y reportes oficiales.
 
-**Stack:** NestJS 11, TypeORM, PostgreSQL 16, JWT, Bcrypt, Cloudflare R2.
+**Stack:** NestJS 11, TypeORM, PostgreSQL 16, JWT, Bcrypt, Cloudflare R2, Evolution API v2 (WhatsApp).
 **Frontend:** repositorio aparte, una PWA con Vue 3.
 
 ## Requisitos
@@ -11,6 +11,7 @@ Backend del sistema de la Gobernación de Oruro. Conecta postulantes con empresa
 - PostgreSQL 16
 - Un bucket privado de Cloudflare R2 (para CV, fotos, logos y documentos)
 - Opcional: cuenta SMTP y claves VAPID, para correo y notificaciones push
+- Opcional: servidor de Evolution API v2, para el OTP y los avisos por WhatsApp. Con `OTP_MODE=demo` el código se muestra en pantalla; con `OTP_MODE=whatsapp` se envía al celular
 
 ## Instalación
 
@@ -33,7 +34,7 @@ Para generar las claves push: `npx web-push generate-vapid-keys`.
 |---|---|
 | `npm run start:dev` | Desarrollo con recarga |
 | `npm run build` | Compila en `dist/` |
-| `npm test` | Pruebas de % perfil, % MATCH y transiciones de estado |
+| `npm test` | Pruebas de autenticación, % perfil, % MATCH, transiciones de estado, correo, WhatsApp y notificaciones |
 | `npm run migration:run` | Aplica migraciones |
 | `npm run migration:generate` | Genera una migración desde las entidades |
 | `npm run seed` / `npm run seed:demo` | Datos iniciales / datos de ejemplo |
@@ -50,7 +51,7 @@ src/
   empresas/        registro y validación por GADOR
   ofertas/         CRUD, estados, buscador y favoritos
   postulaciones/   postular, % MATCH y selección
-  notificaciones/  avisos internos, correo, push y aviso de 24 h
+  notificaciones/  avisos internos, correo, push, WhatsApp y aviso de 24 h
   dashboard/       indicadores de GADOR
   reportes/        Excel y PDF con membrete
   catalogos/       catálogos y configuración
@@ -61,13 +62,4 @@ src/
 
 ## Documentación
 
-| Documento | Contenido |
-|---|---|
-| [docs/database.sql](docs/database.sql) | Script completo de la estructura |
-| [docs/diagrama-er.png](docs/diagrama-er.png) | Diagrama entidad-relación |
-| [docs/diccionario-datos.md](docs/diccionario-datos.md) | Diccionario de datos |
-| [docs/MANUAL_TECNICO.md](docs/MANUAL_TECNICO.md) | Instalación, configuración y despliegue |
-| [docs/MANUAL_USUARIO.md](docs/MANUAL_USUARIO.md) | Guía para postulantes, empresas y administradores |
-| [docs/PRUEBAS.md](docs/PRUEBAS.md) | Lista de pruebas por requisito |
-| [docs/DEFENSA.md](docs/DEFENSA.md) | Dónde está cada requisito y preguntas frecuentes |
-| [docs/GUION_VIDEO.md](docs/GUION_VIDEO.md) | Guion del video de 2 minutos |
+La documentación técnica no se versiona en este repositorio; se entrega por separado: script SQL, diagrama entidad-relación, diccionario de datos, manual técnico y manual de usuario.

@@ -7,6 +7,7 @@ import * as webpush from 'web-push';
 import { EstadoOferta } from '../common/enums';
 import { mananaBolivia } from '../common/fechas';
 import { MailService } from '../common/mail.service';
+import { WhatsappService } from '../common/whatsapp.service';
 import { Favorito } from '../ofertas/entities/favorito.entity';
 import { Oferta } from '../ofertas/entities/oferta.entity';
 import { Formacion } from '../postulantes/entities/formacion.entity';
@@ -16,10 +17,17 @@ import { SuscripcionDto } from './dto/suscripcion.dto';
 import { Notificacion } from './entities/notificacion.entity';
 import { PushSubscription } from './entities/push-subscription.entity';
 
+export interface OpcionesAviso {
+  url?: string;
+  /** Solo avisos personales: los masivos arriesgan el bloqueo del número. */
+  whatsapp?: boolean;
+}
+
 @Injectable()
 export class NotificacionesService {
   private readonly logger = new Logger(NotificacionesService.name);
   private readonly pushActivo: boolean;
+  private readonly baseFrontend: string;
 
   constructor(
     @InjectRepository(Notificacion)
@@ -31,8 +39,12 @@ export class NotificacionesService {
     @InjectRepository(Favorito)
     private readonly favoritos: Repository<Favorito>,
     private readonly mail: MailService,
+    private readonly whatsapp: WhatsappService,
     config: ConfigService,
   ) {
+    this.baseFrontend = (config.get<string>('FRONTEND_URL') ?? '').split(
+      ',',
+    )[0];
     const publica = config.get<string>('VAPID_PUBLIC_KEY');
     const privada = config.get<string>('VAPID_PRIVATE_KEY');
     const sujeto = config.get<string>('VAPID_SUBJECT');
@@ -42,20 +54,51 @@ export class NotificacionesService {
     }
   }
 
-  /** Guarda el aviso y lo envía por correo y push. Nunca lanza errores. */
-  async notificar(userId: number, titulo: string, mensaje: string) {
+  /**
+   * Guarda el aviso y lo envía por los canales externos sin esperarlos, para
+   * que un servidor lento no demore la operación. Nunca lanza errores.
+   */
+  async notificar(
+    userId: number,
+    titulo: string,
+    mensaje: string,
+    { url, whatsapp = false }: OpcionesAviso = {},
+  ) {
     try {
       const user = await this.users.findOneBy({ id: userId });
       if (!user) return;
       await this.notificaciones.save(
         this.notificaciones.create({ user, titulo, mensaje }),
       );
-      await Promise.all([
-        this.mail.enviar(user.email, titulo, mensaje),
-        this.enviarPush(userId, titulo, mensaje),
-      ]);
+      void this.despachar(user, titulo, mensaje, url, whatsapp);
     } catch (error) {
       this.logger.error(`No se pudo notificar: ${String(error)}`);
+    }
+  }
+
+  /** Un canal caído no impide que los demás entreguen el aviso. */
+  async despachar(
+    user: User,
+    titulo: string,
+    mensaje: string,
+    url: string | undefined,
+    whatsapp: boolean,
+  ) {
+    const enlace = url ? `${this.baseFrontend}${url}` : undefined;
+    const resultados = await Promise.allSettled([
+      this.mail.enviar(user.email, titulo, mensaje, enlace),
+      this.enviarPush(user.id, titulo, mensaje, url),
+      whatsapp
+        ? this.whatsapp.enviar(
+            user.celular,
+            [`*${titulo}*`, mensaje, enlace].filter(Boolean).join('\n\n'),
+          )
+        : Promise.resolve(),
+    ]);
+    for (const resultado of resultados) {
+      if (resultado.status === 'rejected') {
+        this.logger.error(`Canal de aviso: ${String(resultado.reason)}`);
+      }
     }
   }
 
@@ -75,6 +118,7 @@ export class NotificacionesService {
           fila.id,
           'Nueva oferta de tu profesión',
           `Se publicó la oferta "${titulo}".`,
+          { url: `/ofertas/${ofertaId}` },
         );
       }
     } catch (error) {
@@ -97,13 +141,19 @@ export class NotificacionesService {
       await this.ofertas.update(oferta.id, { avisoCierreEnviado: true });
       const titulo = 'Oferta por vencer';
       const mensaje = `La oferta "${oferta.titulo}" cierra en menos de 24 horas.`;
-      await this.notificar(oferta.empresa.user.id, titulo, mensaje);
+      await this.notificar(oferta.empresa.user.id, titulo, mensaje, {
+        url: '/empresa/ofertas',
+        whatsapp: true,
+      });
       const guardados = await this.favoritos.find({
         where: { oferta: { id: oferta.id } },
         relations: { profile: { user: true } },
       });
       for (const favorito of guardados) {
-        await this.notificar(favorito.profile.user.id, titulo, mensaje);
+        await this.notificar(favorito.profile.user.id, titulo, mensaje, {
+          url: `/ofertas/${oferta.id}`,
+          whatsapp: true,
+        });
       }
     }
   }
@@ -137,7 +187,12 @@ export class NotificacionesService {
     return { mensaje: 'Notificaciones activadas' };
   }
 
-  private async enviarPush(userId: number, titulo: string, mensaje: string) {
+  private async enviarPush(
+    userId: number,
+    titulo: string,
+    mensaje: string,
+    url?: string,
+  ) {
     if (!this.pushActivo) return;
     const destinos = await this.suscripciones.findBy({ user: { id: userId } });
     await Promise.all(
@@ -145,7 +200,7 @@ export class NotificacionesService {
         try {
           await webpush.sendNotification(
             { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
-            JSON.stringify({ titulo, mensaje }),
+            JSON.stringify({ titulo, mensaje, url }),
           );
         } catch (error) {
           // 404 y 410: el navegador canceló la suscripción.

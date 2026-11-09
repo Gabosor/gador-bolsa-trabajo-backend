@@ -1,6 +1,7 @@
 import {
   calcularCompletitud,
   DatosPerfil,
+  pendientesPerfil,
   perfilPuedePostular,
 } from './completitud';
 
@@ -49,5 +50,21 @@ describe('calcularCompletitud', () => {
 
   it('exige dirección y fecha para los datos personales', () => {
     expect(calcularCompletitud({ ...completo, direccion: null })).toBe(85);
+  });
+});
+
+describe('pendientesPerfil', () => {
+  it('no devuelve nada si el perfil está completo', () => {
+    expect(pendientesPerfil(completo)).toEqual([]);
+  });
+
+  it('indica exactamente lo que falta y cuánto suma', () => {
+    const pendientes = pendientesPerfil({
+      ...completo,
+      cvKey: null,
+      idiomas: 0,
+    });
+    expect(pendientes.map((p) => p.clave)).toEqual(['cv', 'idiomas']);
+    expect(pendientes.reduce((s, p) => s + p.puntos, 0)).toBe(25);
   });
 });

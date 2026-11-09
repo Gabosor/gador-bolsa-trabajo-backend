@@ -3,7 +3,6 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
-  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -15,6 +14,7 @@ import { DataSource, Repository } from 'typeorm';
 import { AuditService } from '../auditoria/audit.service';
 import { AccionAudit, Roles } from '../common/enums';
 import { MailService } from '../common/mail.service';
+import { WhatsappService } from '../common/whatsapp.service';
 import { PostulanteProfile } from '../postulantes/entities/postulante-profile.entity';
 import { Role } from '../users/entities/role.entity';
 import { User } from '../users/entities/user.entity';
@@ -29,6 +29,11 @@ import {
 export const COSTO_BCRYPT = 12;
 const MAX_INTENTOS = 5;
 const MINUTO = 60 * 1000;
+const VIGENCIA_OTP = 10 * MINUTO;
+const ESPERA_REENVIO_OTP = 30 * 1000;
+
+type DatosOtp = Pick<User, 'otpHash' | 'otpExpiresAt' | 'otpIntentos'>;
+type RespuestaOtp = { mensaje: string; otpDemo?: string };
 
 @Injectable()
 export class AuthService {
@@ -38,6 +43,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly audit: AuditService,
     private readonly mail: MailService,
+    private readonly whatsapp: WhatsappService,
     private readonly config: ConfigService,
   ) {}
 
@@ -47,13 +53,15 @@ export class AuthService {
     });
     if (existe) throw new ConflictException('El email o CI ya está registrado');
 
+    // Se envía antes de guardar: si falla, la cuenta no queda a medias.
+    const { datos, respuesta } = await this.emitirOtp(dto.celular);
     const password = await bcrypt.hash(dto.password, COSTO_BCRYPT);
-    const user = await this.dataSource.transaction(async (manager) => {
+    await this.dataSource.transaction(async (manager) => {
       const role = await manager
         .getRepository(Role)
         .findOneByOrFail({ nombre: Roles.Postulante });
       const nuevo = await manager.save(
-        manager.create(User, { ...dto, password, role }),
+        manager.create(User, { ...dto, ...datos, password, role }),
       );
       await manager.save(manager.create(PostulanteProfile, { user: nuevo }));
       await this.audit.log(
@@ -67,9 +75,8 @@ export class AuthService {
         },
         manager,
       );
-      return nuevo;
     });
-    return this.generarOtp(user);
+    return respuesta;
   }
 
   async login(dto: LoginDto, ip: string) {
@@ -119,11 +126,14 @@ export class AuthService {
   }
 
   async reenviarOtp(email: string) {
+    const generica = { mensaje: 'Si la cuenta existe, se envió un código' };
     const user = await this.users.findOneBy({ email });
-    if (!user || user.phoneVerified) {
-      return { mensaje: 'Si la cuenta existe, se envió un código' };
-    }
-    return this.generarOtp(user);
+    if (!user || user.phoneVerified || this.otpEnEspera(user)) return generica;
+
+    // Se guarda después de enviar: un fallo no consume la espera.
+    const { datos, respuesta } = await this.emitirOtp(user.celular);
+    await this.users.update(user.id, datos);
+    return respuesta.otpDemo ? respuesta : generica;
   }
 
   async verificarOtp(dto: VerifyOtpDto) {
@@ -137,12 +147,16 @@ export class AuthService {
       user.otpExpiresAt &&
       user.otpExpiresAt > new Date() &&
       (await bcrypt.compare(dto.codigo, user.otpHash));
-    if (!valido) throw new BadRequestException('Código inválido o vencido');
+    if (!valido) {
+      if (user?.otpHash) await this.registrarFalloOtp(user);
+      throw new BadRequestException('Código inválido o vencido');
+    }
 
     await this.users.update(user.id, {
       phoneVerified: true,
       otpHash: null,
       otpExpiresAt: null,
+      otpIntentos: 0,
     });
     return { mensaje: 'Celular verificado' };
   }
@@ -218,17 +232,45 @@ export class AuthService {
     );
   }
 
+  /** Al agotar los intentos anula el código; conserva la fecha para la espera. */
+  private async registrarFalloOtp(user: User) {
+    const intentos = user.otpIntentos + 1;
+    await this.users.update(
+      user.id,
+      intentos >= MAX_INTENTOS
+        ? { otpHash: null, otpIntentos: 0 }
+        : { otpIntentos: intentos },
+    );
+  }
+
+  private otpEnEspera(user: User) {
+    if (!user.otpExpiresAt) return false;
+    const emitido = user.otpExpiresAt.getTime() - VIGENCIA_OTP;
+    return Date.now() - emitido < ESPERA_REENVIO_OTP;
+  }
+
   /** En modo demo el código se devuelve para mostrarlo en pantalla. */
-  private async generarOtp(user: User) {
-    if (this.config.get('OTP_MODE') !== 'demo') {
-      // Punto único para integrar un proveedor SMS.
-      throw new ServiceUnavailableException('Proveedor SMS no configurado');
-    }
+  private async emitirOtp(
+    celular: string,
+  ): Promise<{ datos: DatosOtp; respuesta: RespuestaOtp }> {
     const codigo = randomInt(0, 1_000_000).toString().padStart(6, '0');
-    await this.users.update(user.id, {
-      otpHash: await bcrypt.hash(codigo, COSTO_BCRYPT),
-      otpExpiresAt: new Date(Date.now() + 10 * MINUTO),
-    });
-    return { mensaje: 'Código generado', otpDemo: codigo };
+    const otpHash = await bcrypt.hash(codigo, COSTO_BCRYPT);
+    const demo = this.config.get('OTP_MODE') === 'demo';
+    if (!demo) {
+      await this.whatsapp.enviar(
+        celular,
+        `Tu código de la Bolsa de Trabajo GADOR es ${codigo}. Vence en 10 minutos. No lo compartas con nadie.`,
+      );
+    }
+    return {
+      datos: {
+        otpHash,
+        otpExpiresAt: new Date(Date.now() + VIGENCIA_OTP),
+        otpIntentos: 0,
+      },
+      respuesta: demo
+        ? { mensaje: 'Código generado', otpDemo: codigo }
+        : { mensaje: 'Código enviado por WhatsApp' },
+    };
   }
 }

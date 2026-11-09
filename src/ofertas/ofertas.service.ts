@@ -138,7 +138,10 @@ export class OfertasService {
       ...o,
       totalPostulantes: conteos.get(o.id) ?? 0,
     }));
-    return paginado(data, total, filtro);
+    return {
+      ...paginado(data, total, filtro),
+      cupo: await this.cupoDe(empresa),
+    };
   }
 
   async miOferta(userId: number, id: number) {
@@ -165,7 +168,7 @@ export class OfertasService {
   ) {
     const oferta = await this.ofertas.findOne({
       where: { id },
-      relations: { empresa: true },
+      relations: { empresa: { user: true } },
     });
     if (!oferta) throw new NotFoundException('Oferta no encontrada');
 
@@ -217,7 +220,24 @@ export class OfertasService {
       // No se espera: los avisos no deben demorar la respuesta a GADOR.
       void this.notificaciones.avisarNuevaOferta(id, oferta.titulo);
     }
+    if (
+      esGador &&
+      (nuevo === EstadoOferta.Publicada || nuevo === EstadoOferta.Borrador)
+    ) {
+      await this.avisarRevision(oferta, nuevo === EstadoOferta.Publicada);
+    }
     return { id, estado: nuevo };
+  }
+
+  private async avisarRevision(oferta: Oferta, aprobada: boolean) {
+    await this.notificaciones.notificar(
+      oferta.empresa.user.id,
+      aprobada ? 'GADOR publicó tu oferta' : 'GADOR devolvió tu oferta',
+      aprobada
+        ? `La oferta "${oferta.titulo}" ya está publicada.`
+        : `La oferta "${oferta.titulo}" volvió a borrador. Motivo: ${oferta.motivoRechazo}`,
+      { url: '/empresa/ofertas', whatsapp: true },
+    );
   }
 
   /** Buscador público: solo ofertas visibles para los postulantes (RF03). */
@@ -270,6 +290,25 @@ export class OfertasService {
     if (!oferta) throw new NotFoundException('Oferta no disponible');
     await this.ofertas.increment({ id }, 'totalVistas', 1);
     return this.vistaPublica(oferta);
+  }
+
+  /** Hasta tres ofertas visibles que piden alguna profesión en común. */
+  async similares(id: number) {
+    const base = await this.ofertas.findOne({
+      where: { id },
+      relations: { profesiones: true },
+    });
+    if (!base || base.profesiones.length === 0) return [];
+    const ofertas = await this.consultaPublica()
+      .andWhere('o.id <> :id', { id })
+      .andWhere(
+        'EXISTS (SELECT 1 FROM oferta_profesion op WHERE op.oferta_id = o.id AND op.profesion_id IN (:...profesionIds))',
+        { profesionIds: base.profesiones.map((p) => p.id) },
+      )
+      .orderBy('o.createdAt', 'DESC')
+      .take(3)
+      .getMany();
+    return Promise.all(ofertas.map((o) => this.vistaPublica(o)));
   }
 
   private consultaPublica() {
@@ -336,7 +375,7 @@ export class OfertasService {
     }
   }
 
-  private async exigirCupo(empresa: Empresa) {
+  private async cupoDe(empresa: Empresa) {
     const config = await this.configuraciones.findOneBy({
       clave: 'LIMITE_OFERTAS_ACTIVAS',
     });
@@ -345,6 +384,11 @@ export class OfertasService {
       empresa: { id: empresa.id },
       estado: In(ESTADOS_ACTIVOS),
     });
+    return { activas, limite };
+  }
+
+  private async exigirCupo(empresa: Empresa) {
+    const { activas, limite } = await this.cupoDe(empresa);
     if (activas >= limite) {
       throw new ConflictException(
         `Alcanzaste el límite de ${limite} ofertas activas`,

@@ -11,7 +11,11 @@ import { Habilidad } from '../catalogos/entities/habilidad.entity';
 import { AccionAudit, TipoCatalogo } from '../common/enums';
 import { hoyBolivia } from '../common/fechas';
 import { R2Service } from '../storage/r2.service';
-import { calcularCompletitud } from './completitud';
+import {
+  calcularCompletitud,
+  DatosPerfil,
+  pendientesPerfil,
+} from './completitud';
 import {
   DatosPersonalesDto,
   ExperienciaDto,
@@ -30,6 +34,19 @@ interface Cambio {
   tabla: string;
   registroId: number | null;
   nuevos?: unknown;
+}
+
+function datosPerfil(perfil: PostulanteProfile): DatosPerfil {
+  return {
+    direccion: perfil.direccion,
+    fechaNacimiento: perfil.fechaNacimiento,
+    fotoKey: perfil.fotoKey,
+    cvKey: perfil.cvKey,
+    idiomas: perfil.idiomas.length,
+    formaciones: perfil.formaciones.length,
+    experiencias: perfil.experiencias.length,
+    habilidades: perfil.habilidades.length,
+  };
 }
 
 @Injectable()
@@ -72,7 +89,8 @@ export class PostulantesService {
   }
 
   async miPerfil(userId: number) {
-    return this.conUrls(await this.deUsuario(userId));
+    const perfil = await this.conUrls(await this.deUsuario(userId));
+    return { ...perfil, pendientes: pendientesPerfil(datosPerfil(perfil)) };
   }
 
   async actualizarDatos(userId: number, dto: DatosPersonalesDto, ip: string) {
@@ -143,6 +161,32 @@ export class PostulantesService {
     });
   }
 
+  async actualizarFormacion(
+    userId: number,
+    id: number,
+    dto: FormacionDto,
+    ip: string,
+  ) {
+    const perfil = await this.deUsuario(userId);
+    await this.exigirFila(Formacion, id, perfil.id);
+    const { profesionId, ...datos } = dto;
+    const profesion = await this.catalogos.exigir(
+      profesionId,
+      TipoCatalogo.Profesion,
+    );
+    return this.guardar(perfil.id, async (manager) => {
+      await manager.update(Formacion, id, { ...datos, profesion });
+      return {
+        userId,
+        ip,
+        accion: AccionAudit.Update,
+        tabla: 'formaciones',
+        registroId: id,
+        nuevos: dto,
+      };
+    });
+  }
+
   async eliminarFormacion(userId: number, id: number, ip: string) {
     return this.eliminarFila(userId, Formacion, 'formaciones', id, ip);
   }
@@ -159,6 +203,27 @@ export class PostulantesService {
         accion: AccionAudit.Create,
         tabla: 'experiencias',
         registroId: fila.id,
+      };
+    });
+  }
+
+  async actualizarExperiencia(
+    userId: number,
+    id: number,
+    dto: ExperienciaDto,
+    ip: string,
+  ) {
+    const perfil = await this.deUsuario(userId);
+    await this.exigirFila(Experiencia, id, perfil.id);
+    return this.guardar(perfil.id, async (manager) => {
+      await manager.update(Experiencia, id, { ...dto });
+      return {
+        userId,
+        ip,
+        accion: AccionAudit.Update,
+        tabla: 'experiencias',
+        registroId: id,
+        nuevos: dto,
       };
     });
   }
@@ -215,11 +280,7 @@ export class PostulantesService {
     ip: string,
   ) {
     const perfil = await this.deUsuario(userId);
-    const existe = await this.dataSource.manager.existsBy(entidad, {
-      id,
-      profile: { id: perfil.id },
-    });
-    if (!existe) throw new NotFoundException('Registro no encontrado');
+    await this.exigirFila(entidad, id, perfil.id);
     return this.guardar(perfil.id, async (manager) => {
       await manager.delete(entidad, id);
       return {
@@ -230,6 +291,19 @@ export class PostulantesService {
         registroId: id,
       };
     });
+  }
+
+  /** Solo el dueño del perfil puede tocar sus filas. */
+  private async exigirFila(
+    entidad: typeof Formacion | typeof Experiencia,
+    id: number,
+    perfilId: number,
+  ) {
+    const existe = await this.dataSource.manager.existsBy(entidad, {
+      id,
+      profile: { id: perfilId },
+    });
+    if (!existe) throw new NotFoundException('Registro no encontrado');
   }
 
   /**
@@ -246,16 +320,7 @@ export class PostulantesService {
         where: { id: perfilId },
         relations: { formaciones: true, experiencias: true, habilidades: true },
       });
-      const nuevo = calcularCompletitud({
-        direccion: perfil.direccion,
-        fechaNacimiento: perfil.fechaNacimiento,
-        fotoKey: perfil.fotoKey,
-        cvKey: perfil.cvKey,
-        idiomas: perfil.idiomas.length,
-        formaciones: perfil.formaciones.length,
-        experiencias: perfil.experiencias.length,
-        habilidades: perfil.habilidades.length,
-      });
+      const nuevo = calcularCompletitud(datosPerfil(perfil));
       await manager.update(PostulanteProfile, perfilId, {
         porcentajeCompletitud: nuevo,
       });
