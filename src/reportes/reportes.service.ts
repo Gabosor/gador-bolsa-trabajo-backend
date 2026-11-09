@@ -1,5 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import * as ExcelJS from 'exceljs';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import PDFDocument from 'pdfkit';
 import { DataSource } from 'typeorm';
 import { hoyBolivia } from '../common/fechas';
@@ -98,9 +100,32 @@ const MEMBRETE = [
 
 type Fila = (string | number | null)[];
 
+/** Imagen ya abierta por pdfkit; @types/pdfkit no tipa openImage. */
+type ImagenPdf = Parameters<PDFKit.PDFDocument['image']>[0];
+type ConOpenImage = { openImage(origen: Buffer): ImagenPdf };
+
 @Injectable()
 export class ReportesService {
+  private readonly logger = new Logger(ReportesService.name);
+  /** undefined = aún no se leyó; null = no está disponible. */
+  private escudoCache: Buffer | null | undefined;
+
   constructor(private readonly dataSource: DataSource) {}
+
+  /** Escudo de la Gobernación (se copia a dist con los assets de nest-cli). */
+  protected leerEscudo(): Buffer | null {
+    try {
+      return readFileSync(join(__dirname, 'assets', 'escudo.png'));
+    } catch {
+      this.logger.warn('Reportes sin escudo: falta assets/escudo.png');
+      return null;
+    }
+  }
+
+  private escudo(): Buffer | null {
+    if (this.escudoCache === undefined) this.escudoCache = this.leerEscudo();
+    return this.escudoCache;
+  }
 
   async generar(tipo: TipoReporte, dto: ReporteDto) {
     const definicion = REPORTES[tipo];
@@ -146,15 +171,39 @@ export class ReportesService {
       fgColor: { argb: 'FF73141F' },
     };
 
-    [...MEMBRETE, titulo, subtitulo].forEach((texto, i) => {
+    const escudo = columnas.length > 1 ? this.escudo() : null;
+    const blanco = { argb: 'FFFFFFFF' };
+    MEMBRETE.forEach((texto, i) => {
       const fila = i + 1;
+      // Con escudo, la columna A queda para la imagen y el texto va desde B.
+      const desde = escudo ? 2 : 1;
+      hoja.mergeCells(fila, desde, fila, columnas.length);
+      const celda = hoja.getCell(fila, desde);
+      celda.value = texto;
+      celda.fill = relleno;
+      celda.font = { bold: i === 0, color: blanco };
+      celda.alignment = { vertical: 'middle' };
+      if (escudo) hoja.getRow(fila).height = 22;
+    });
+    if (escudo) {
+      hoja.mergeCells(1, 1, MEMBRETE.length, 1);
+      hoja.getCell(1, 1).fill = relleno;
+      const imagen = libro.addImage({
+        buffer: escudo as unknown as ExcelJS.Buffer,
+        extension: 'png',
+      });
+      hoja.addImage(imagen, {
+        tl: { col: 0.2, row: 0.1 },
+        ext: { width: 66, height: 72 },
+        editAs: 'oneCell',
+      });
+    }
+    [titulo, subtitulo].forEach((texto, i) => {
+      const fila = MEMBRETE.length + i + 1;
       hoja.mergeCells(fila, 1, fila, columnas.length);
       const celda = hoja.getCell(fila, 1);
       celda.value = texto;
-      if (i < MEMBRETE.length) {
-        celda.fill = relleno;
-        celda.font = { bold: i === 0, color: { argb: 'FFFFFFFF' } };
-      } else if (i === MEMBRETE.length) {
+      if (i === 0) {
         celda.font = { bold: true, size: 14, color: { argb: 'FF73141F' } };
       }
     });
@@ -191,6 +240,11 @@ export class ReportesService {
       const totalAnchos = columnas.reduce((s, c) => s + c.ancho, 0);
       const anchos = columnas.map((c) => (c.ancho / totalAnchos) * anchoUtil);
       const limite = doc.page.height - 50;
+      // Se abre una sola vez: así pdfkit reutiliza la imagen en cada página.
+      const escudo = this.escudo();
+      const imagen = escudo
+        ? (doc as unknown as ConOpenImage).openImage(escudo)
+        : null;
 
       /** Escribe una fila y devuelve la altura que ocupó. */
       const dibujarFila = (celdas: Fila, y: number) => {
@@ -210,10 +264,26 @@ export class ReportesService {
 
       /** Membrete y títulos, repetidos en cada página. */
       const encabezado = (): number => {
-        doc.rect(0, 0, doc.page.width, 70).fill(GUINDA).fillColor('white');
-        doc.font('Helvetica-Bold').fontSize(11).text(MEMBRETE[0], margen, 14);
+        doc.rect(0, 0, doc.page.width, 70).fill(GUINDA);
+        let x = margen;
+        if (imagen) {
+          doc.roundedRect(margen, 9, 52, 52, 8).fill('#FFFFFF');
+          doc.image(imagen, margen + 4, 12, {
+            fit: [44, 46],
+            align: 'center',
+            valign: 'center',
+          });
+          x = margen + 66;
+        }
+        // Deja libre la esquina derecha para "G.A.D.O.R.".
+        const linea = {
+          width: anchoUtil - (x - margen) - 110,
+          lineBreak: false,
+        };
+        doc.fillColor('white').font('Helvetica-Bold').fontSize(11);
+        doc.text(MEMBRETE[0], x, 14, linea);
         doc.font('Helvetica').fontSize(9);
-        doc.text(MEMBRETE[1], margen, 32).text(MEMBRETE[2], margen, 46);
+        doc.text(MEMBRETE[1], x, 32, linea).text(MEMBRETE[2], x, 46, linea);
         doc
           .font('Helvetica-Bold')
           .fontSize(13)
