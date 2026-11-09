@@ -168,7 +168,7 @@ export class OfertasService {
   ) {
     const oferta = await this.ofertas.findOne({
       where: { id },
-      relations: { empresa: true },
+      relations: { empresa: { user: true } },
     });
     if (!oferta) throw new NotFoundException('Oferta no encontrada');
 
@@ -220,7 +220,24 @@ export class OfertasService {
       // No se espera: los avisos no deben demorar la respuesta a GADOR.
       void this.notificaciones.avisarNuevaOferta(id, oferta.titulo);
     }
+    if (
+      esGador &&
+      (nuevo === EstadoOferta.Publicada || nuevo === EstadoOferta.Borrador)
+    ) {
+      await this.avisarRevision(oferta, nuevo === EstadoOferta.Publicada);
+    }
     return { id, estado: nuevo };
+  }
+
+  private async avisarRevision(oferta: Oferta, aprobada: boolean) {
+    await this.notificaciones.notificar(
+      oferta.empresa.user.id,
+      aprobada ? 'GADOR publicó tu oferta' : 'GADOR devolvió tu oferta',
+      aprobada
+        ? `La oferta "${oferta.titulo}" ya está publicada.`
+        : `La oferta "${oferta.titulo}" volvió a borrador. Motivo: ${oferta.motivoRechazo}`,
+      { url: '/empresa/ofertas', whatsapp: true },
+    );
   }
 
   /** Buscador público: solo ofertas visibles para los postulantes (RF03). */

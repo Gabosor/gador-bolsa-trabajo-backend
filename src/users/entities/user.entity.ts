@@ -53,6 +53,9 @@ export class User {
   @Column({ name: 'otp_expires_at', type: 'timestamptz', nullable: true })
   otpExpiresAt: Date | null;
 
+  @Column({ name: 'otp_intentos', type: 'int', default: 0 })
+  otpIntentos: number;
+
   // Recuperación por email (RF01)
   @Column({
     name: 'reset_token_hash',

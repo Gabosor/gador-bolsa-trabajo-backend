@@ -15,6 +15,7 @@ import {
   EstadoPostulacion,
   Roles,
 } from '../common/enums';
+import { NOMBRE_ESTADO_POSTULACION } from '../common/etiquetas';
 import { hoyBolivia } from '../common/fechas';
 import { paginado, PaginationDto } from '../common/pagination.dto';
 import { EmpresasService } from '../empresas/empresas.service';
@@ -371,19 +372,20 @@ export class PostulacionesService {
     });
     const { titulo } = postulacion.oferta;
     const destino = postulacion.postulante.user.id;
+    const opciones = { url: '/postulaciones', whatsapp: true };
     if (nuevo === EstadoPostulacion.Visto) {
       await this.notificaciones.notificar(
         destino,
         'Una empresa vio tu CV',
         `${postulacion.oferta.empresa.razonSocial} revisó tu postulación a "${titulo}".`,
-        '/postulaciones',
+        opciones,
       );
     } else {
       await this.notificaciones.notificar(
         destino,
         'Tu postulación cambió de estado',
-        `Tu postulación a "${titulo}" ahora está en: ${nuevo}.`,
-        '/postulaciones',
+        `Tu postulación a "${titulo}" ahora está en: ${NOMBRE_ESTADO_POSTULACION[nuevo]}.`,
+        opciones,
       );
     }
   }
