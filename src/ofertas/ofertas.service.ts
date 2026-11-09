@@ -138,7 +138,10 @@ export class OfertasService {
       ...o,
       totalPostulantes: conteos.get(o.id) ?? 0,
     }));
-    return paginado(data, total, filtro);
+    return {
+      ...paginado(data, total, filtro),
+      cupo: await this.cupoDe(empresa),
+    };
   }
 
   async miOferta(userId: number, id: number) {
@@ -272,6 +275,25 @@ export class OfertasService {
     return this.vistaPublica(oferta);
   }
 
+  /** Hasta tres ofertas visibles que piden alguna profesión en común. */
+  async similares(id: number) {
+    const base = await this.ofertas.findOne({
+      where: { id },
+      relations: { profesiones: true },
+    });
+    if (!base || base.profesiones.length === 0) return [];
+    const ofertas = await this.consultaPublica()
+      .andWhere('o.id <> :id', { id })
+      .andWhere(
+        'EXISTS (SELECT 1 FROM oferta_profesion op WHERE op.oferta_id = o.id AND op.profesion_id IN (:...profesionIds))',
+        { profesionIds: base.profesiones.map((p) => p.id) },
+      )
+      .orderBy('o.createdAt', 'DESC')
+      .take(3)
+      .getMany();
+    return Promise.all(ofertas.map((o) => this.vistaPublica(o)));
+  }
+
   private consultaPublica() {
     return this.ofertas
       .createQueryBuilder('o')
@@ -336,7 +358,7 @@ export class OfertasService {
     }
   }
 
-  private async exigirCupo(empresa: Empresa) {
+  private async cupoDe(empresa: Empresa) {
     const config = await this.configuraciones.findOneBy({
       clave: 'LIMITE_OFERTAS_ACTIVAS',
     });
@@ -345,6 +367,11 @@ export class OfertasService {
       empresa: { id: empresa.id },
       estado: In(ESTADOS_ACTIVOS),
     });
+    return { activas, limite };
+  }
+
+  private async exigirCupo(empresa: Empresa) {
+    const { activas, limite } = await this.cupoDe(empresa);
     if (activas >= limite) {
       throw new ConflictException(
         `Alcanzaste el límite de ${limite} ofertas activas`,

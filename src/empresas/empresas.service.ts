@@ -217,6 +217,7 @@ export class EmpresasService {
       empresa.user.id,
       'GADOR revisó tu empresa',
       `El estado de ${empresa.razonSocial} ahora es ${dto.estado}.${motivo}`,
+      '/empresa/ofertas',
     );
     const { user, ...datos } = empresa;
     void user;

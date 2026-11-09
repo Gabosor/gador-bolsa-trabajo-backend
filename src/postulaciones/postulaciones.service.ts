@@ -45,6 +45,37 @@ export class PostulacionesService {
     private readonly audit: AuditService,
   ) {}
 
+  /** Vista previa del % MATCH antes de postular, sin registrar nada. */
+  async compatibilidad(userId: number, ofertaId: number) {
+    const perfil = await this.postulantes.deUsuario(userId);
+    const oferta = await this.ofertaDisponible(ofertaId);
+    const propias = perfil.habilidades.map((h) => ({
+      habilidadId: h.habilidad.id,
+      nivel: h.nivel,
+    }));
+    return {
+      porcentaje: calcularMatch(
+        propias,
+        oferta.habilidades.map((h) => ({
+          habilidadId: h.habilidad.id,
+          obligatoria: h.obligatoria,
+          nivelMinimo: h.nivelMinimo,
+        })),
+      ),
+      porcentajePerfil: perfil.porcentajeCompletitud,
+      puedePostular: perfilPuedePostular(perfil.porcentajeCompletitud),
+      habilidades: oferta.habilidades.map((h) => {
+        const nivelPropio =
+          propias.find((p) => p.habilidadId === h.habilidad.id)?.nivel ?? null;
+        return {
+          habilidadId: h.habilidad.id,
+          nivelPropio,
+          cumple: nivelPropio !== null && nivelPropio >= h.nivelMinimo,
+        };
+      }),
+    };
+  }
+
   /** Motor de postulación en 1 clic (RF10). */
   async postular(userId: number, ofertaId: number, ip: string) {
     const perfil = await this.postulantes.deUsuario(userId);
@@ -345,12 +376,14 @@ export class PostulacionesService {
         destino,
         'Una empresa vio tu CV',
         `${postulacion.oferta.empresa.razonSocial} revisó tu postulación a "${titulo}".`,
+        '/postulaciones',
       );
     } else {
       await this.notificaciones.notificar(
         destino,
         'Tu postulación cambió de estado',
         `Tu postulación a "${titulo}" ahora está en: ${nuevo}.`,
+        '/postulaciones',
       );
     }
   }

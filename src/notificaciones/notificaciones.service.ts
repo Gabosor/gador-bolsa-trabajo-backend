@@ -43,7 +43,12 @@ export class NotificacionesService {
   }
 
   /** Guarda el aviso y lo envía por correo y push. Nunca lanza errores. */
-  async notificar(userId: number, titulo: string, mensaje: string) {
+  async notificar(
+    userId: number,
+    titulo: string,
+    mensaje: string,
+    url?: string,
+  ) {
     try {
       const user = await this.users.findOneBy({ id: userId });
       if (!user) return;
@@ -52,7 +57,7 @@ export class NotificacionesService {
       );
       await Promise.all([
         this.mail.enviar(user.email, titulo, mensaje),
-        this.enviarPush(userId, titulo, mensaje),
+        this.enviarPush(userId, titulo, mensaje, url),
       ]);
     } catch (error) {
       this.logger.error(`No se pudo notificar: ${String(error)}`);
@@ -75,6 +80,7 @@ export class NotificacionesService {
           fila.id,
           'Nueva oferta de tu profesión',
           `Se publicó la oferta "${titulo}".`,
+          `/ofertas/${ofertaId}`,
         );
       }
     } catch (error) {
@@ -97,13 +103,23 @@ export class NotificacionesService {
       await this.ofertas.update(oferta.id, { avisoCierreEnviado: true });
       const titulo = 'Oferta por vencer';
       const mensaje = `La oferta "${oferta.titulo}" cierra en menos de 24 horas.`;
-      await this.notificar(oferta.empresa.user.id, titulo, mensaje);
+      await this.notificar(
+        oferta.empresa.user.id,
+        titulo,
+        mensaje,
+        '/empresa/ofertas',
+      );
       const guardados = await this.favoritos.find({
         where: { oferta: { id: oferta.id } },
         relations: { profile: { user: true } },
       });
       for (const favorito of guardados) {
-        await this.notificar(favorito.profile.user.id, titulo, mensaje);
+        await this.notificar(
+          favorito.profile.user.id,
+          titulo,
+          mensaje,
+          `/ofertas/${oferta.id}`,
+        );
       }
     }
   }
@@ -137,7 +153,12 @@ export class NotificacionesService {
     return { mensaje: 'Notificaciones activadas' };
   }
 
-  private async enviarPush(userId: number, titulo: string, mensaje: string) {
+  private async enviarPush(
+    userId: number,
+    titulo: string,
+    mensaje: string,
+    url?: string,
+  ) {
     if (!this.pushActivo) return;
     const destinos = await this.suscripciones.findBy({ user: { id: userId } });
     await Promise.all(
@@ -145,7 +166,7 @@ export class NotificacionesService {
         try {
           await webpush.sendNotification(
             { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
-            JSON.stringify({ titulo, mensaje }),
+            JSON.stringify({ titulo, mensaje, url }),
           );
         } catch (error) {
           // 404 y 410: el navegador canceló la suscripción.

@@ -77,6 +77,17 @@ export class PostulantesController {
     return this.postulantes.agregarFormacion(user.id, dto, ip);
   }
 
+  @Put('formaciones/:id')
+  @Auth(Roles.Postulante)
+  actualizarFormacion(
+    @GetUser() user: User,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: FormacionDto,
+    @Ip() ip: string,
+  ) {
+    return this.postulantes.actualizarFormacion(user.id, id, dto, ip);
+  }
+
   @Delete('formaciones/:id')
   @Auth(Roles.Postulante)
   eliminarFormacion(
@@ -95,6 +106,17 @@ export class PostulantesController {
     @Ip() ip: string,
   ) {
     return this.postulantes.agregarExperiencia(user.id, dto, ip);
+  }
+
+  @Put('experiencias/:id')
+  @Auth(Roles.Postulante)
+  actualizarExperiencia(
+    @GetUser() user: User,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: ExperienciaDto,
+    @Ip() ip: string,
+  ) {
+    return this.postulantes.actualizarExperiencia(user.id, id, dto, ip);
   }
 
   @Delete('experiencias/:id')

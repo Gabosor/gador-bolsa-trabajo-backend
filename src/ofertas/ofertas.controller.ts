@@ -49,6 +49,11 @@ export class OfertasController {
     return this.ofertas.buscar(filtro);
   }
 
+  @Get(':id/similares')
+  similares(@Param('id', ParseIntPipe) id: number) {
+    return this.ofertas.similares(id);
+  }
+
   @Get(':id')
   detalle(@Param('id', ParseIntPipe) id: number) {
     return this.ofertas.detallePublico(id);
