@@ -10,7 +10,6 @@ import { DataSource, In, Repository } from 'typeorm';
 import { AuditService } from '../auditoria/audit.service';
 import { CatalogosService } from '../catalogos/catalogos.service';
 import { Configuracion } from '../catalogos/entities/configuracion.entity';
-import { Habilidad } from '../catalogos/entities/habilidad.entity';
 import {
   AccionAudit,
   EstadoEmpresa,
@@ -42,8 +41,6 @@ const RELACIONES = { empresa: true, habilidades: true, profesiones: true };
 export class OfertasService {
   constructor(
     @InjectRepository(Oferta) private readonly ofertas: Repository<Oferta>,
-    @InjectRepository(Habilidad)
-    private readonly habilidades: Repository<Habilidad>,
     @InjectRepository(Configuracion)
     private readonly configuraciones: Repository<Configuracion>,
     @InjectRepository(Postulacion)
@@ -157,7 +154,28 @@ export class OfertasService {
       skip: (filtro.page - 1) * filtro.limit,
       take: filtro.limit,
     });
-    return paginado(data, total, filtro);
+    const conLogo = await Promise.all(data.map((o) => this.conLogo(o, 3600)));
+    return paginado(conLogo, total, filtro);
+  }
+
+  /** Detalle para GADOR: cualquier estado, sin sumar vistas y con el logo. */
+  async detalleRevision(id: number) {
+    const oferta = await this.ofertas.findOne({
+      where: { id },
+      relations: RELACIONES,
+    });
+    if (!oferta) throw new NotFoundException('Oferta no encontrada');
+    return this.conLogo(oferta, 1800);
+  }
+
+  private async conLogo(oferta: Oferta, segundos: number) {
+    return {
+      ...oferta,
+      empresa: {
+        ...oferta.empresa,
+        logoUrl: await this.r2.urlOpcional(oferta.empresa.logoKey, segundos),
+      },
+    };
   }
 
   async cambiarEstado(
@@ -416,17 +434,9 @@ export class OfertasService {
       oferta.salarioMax = dto.salarioMax;
     }
 
-    const ids = dto.habilidades.map((h) => h.habilidadId);
-    if (new Set(ids).size !== ids.length) {
-      throw new BadRequestException('Hay habilidades repetidas');
-    }
-    const encontradas = await this.habilidades.findBy({
-      id: In(ids),
-      activo: true,
-    });
-    if (encontradas.length !== ids.length) {
-      throw new BadRequestException('Alguna habilidad no es válida');
-    }
+    const encontradas = await this.catalogos.exigirHabilidades(
+      dto.habilidades.map((h) => h.habilidadId),
+    );
 
     const [tipoContrato, modalidad, municipio, ...profesiones] =
       await Promise.all([

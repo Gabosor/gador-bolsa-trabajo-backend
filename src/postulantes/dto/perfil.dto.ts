@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
   IsDateString,
@@ -11,6 +11,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { NivelHabilidad } from '../../common/enums';
+import { entre, normalizarTexto } from '../../common/texto';
 
 export class IdiomaDto {
   @IsString()
@@ -68,8 +69,9 @@ export class ExperienciaDto {
   @Max(60)
   anios: number;
 
+  @Transform(normalizarTexto)
   @IsString()
-  @Length(5, 3000)
+  @Length(5, 3000, entre('La descripción', 5, 3000))
   descripcion: string;
 }
 

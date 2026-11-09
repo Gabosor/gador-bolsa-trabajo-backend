@@ -162,13 +162,20 @@ export class EmpresasService {
       skip: (filtro.page - 1) * filtro.limit,
       take: filtro.limit,
     });
-    return paginado(empresas, total, filtro);
+    const conLogo = await Promise.all(
+      empresas.map(async (e) => ({
+        ...e,
+        logoUrl: await this.r2.urlOpcional(e.logoKey, 3600),
+      })),
+    );
+    return paginado(conLogo, total, filtro);
   }
 
   async detalle(id: number) {
     const empresa = await this.empresas.findOneBy({ id });
     if (!empresa) throw new NotFoundException('Empresa no encontrada');
-    return this.conUrls(empresa);
+    // 30 minutos: GADOR revisa los documentos con calma en la misma página.
+    return this.conUrls(empresa, 1800);
   }
 
   async cambiarEstado(
@@ -225,9 +232,9 @@ export class EmpresasService {
     return datos;
   }
 
-  private async conUrls(empresa: Empresa) {
+  private async conUrls(empresa: Empresa, segundos = 300) {
     const url = (key: string | null) =>
-      key ? this.r2.getSignedUrl(key) : Promise.resolve(null);
+      key ? this.r2.getSignedUrl(key, segundos) : Promise.resolve(null);
     const [logoUrl, documentoNitUrl, documentoLegalUrl] = await Promise.all([
       url(empresa.logoKey),
       url(empresa.documentoNitKey),

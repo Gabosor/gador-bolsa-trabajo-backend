@@ -10,9 +10,7 @@ import {
   Min,
 } from 'class-validator';
 import { TipoCatalogo } from '../../common/enums';
-
-const recortar = ({ value }: { value: unknown }) =>
-  typeof value === 'string' ? value.trim() : value;
+import { recortar } from '../../common/texto';
 
 export class ListarCatalogoDto {
   @IsEnum(TipoCatalogo)
@@ -28,10 +26,10 @@ export class CrearCatalogoDto {
   @Length(2, 120)
   nombre: string;
 
-  /** Obligatorio solo para municipios: id del departamento. */
+  /** Municipio: id del departamento (obligatorio). Profesión: id del área (opcional). */
   @IsOptional()
   @IsInt()
-  parentId?: number;
+  parentId?: number | null;
 }
 
 export class CrearHabilidadDto {
@@ -39,18 +37,45 @@ export class CrearHabilidadDto {
   @IsString()
   @Length(1, 80)
   nombre: string;
+
+  /** Sin área, la habilidad es general. */
+  @IsOptional()
+  @IsInt()
+  areaId?: number | null;
 }
 
-export class ActualizarItemDto {
+export class ActualizarCatalogoDto {
   @IsOptional()
   @Transform(recortar)
   @IsString()
-  @Length(1, 120)
+  @Length(2, 120)
   nombre?: string;
 
   @IsOptional()
   @IsBoolean()
   activo?: boolean;
+
+  /** null quita el área de una profesión. */
+  @IsOptional()
+  @IsInt()
+  parentId?: number | null;
+}
+
+export class ActualizarHabilidadDto {
+  @IsOptional()
+  @Transform(recortar)
+  @IsString()
+  @Length(1, 80, { message: 'El nombre admite hasta 80 caracteres' })
+  nombre?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  activo?: boolean;
+
+  /** null deja la habilidad como general. */
+  @IsOptional()
+  @IsInt()
+  areaId?: number | null;
 }
 
 export class ConfiguracionDto {

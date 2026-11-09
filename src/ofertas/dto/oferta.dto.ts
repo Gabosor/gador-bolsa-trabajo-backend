@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
@@ -15,6 +15,13 @@ import {
 } from 'class-validator';
 import { EstadoOferta, NivelHabilidad } from '../../common/enums';
 import { PaginationDto } from '../../common/pagination.dto';
+import {
+  entre,
+  hasta,
+  normalizarTexto,
+  normalizarTextoOpcional,
+  recortar,
+} from '../../common/texto';
 
 export class HabilidadOfertaDto {
   @IsInt()
@@ -28,21 +35,25 @@ export class HabilidadOfertaDto {
 }
 
 export class GuardarOfertaDto {
+  @Transform(recortar)
   @IsString()
-  @Length(3, 150)
+  @Length(3, 150, entre('El título', 3, 150))
   titulo: string;
 
+  @Transform(normalizarTexto)
   @IsString()
-  @Length(10, 10000)
+  @Length(10, 10000, entre('La descripción', 10, 10000))
   descripcion: string;
 
+  @Transform(normalizarTexto)
   @IsString()
-  @Length(3, 5000)
+  @Length(3, 5000, entre('Los requisitos obligatorios', 3, 5000))
   requisitosObligatorios: string;
 
+  @Transform(normalizarTextoOpcional)
   @IsOptional()
   @IsString()
-  @MaxLength(5000)
+  @MaxLength(5000, hasta('Los requisitos deseables', 5000))
   requisitosDeseables?: string;
 
   @IsArray()
@@ -76,9 +87,10 @@ export class GuardarOfertaDto {
   @Min(1)
   salarioMax?: number;
 
+  @Transform(normalizarTextoOpcional)
   @IsOptional()
   @IsString()
-  @MaxLength(3000)
+  @MaxLength(3000, hasta('Los beneficios', 3000))
   beneficios?: string;
 
   @IsDateString({ strict: true }, { message: 'Fecha de cierre no válida' })
@@ -99,9 +111,10 @@ export class CambiarEstadoOfertaDto {
   @IsEnum(EstadoOferta)
   estado: EstadoOferta;
 
+  @Transform(recortar)
   @IsOptional()
   @IsString()
-  @MaxLength(1000)
+  @MaxLength(1000, hasta('El motivo', 1000))
   motivo?: string;
 }
 

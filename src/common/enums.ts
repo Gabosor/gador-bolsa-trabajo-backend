@@ -37,6 +37,8 @@ export enum TipoCatalogo {
   Modalidad = 'MODALIDAD',
   Departamento = 'DEPARTAMENTO',
   Municipio = 'MUNICIPIO',
+  /** Agrupa profesiones y habilidades (Construcción, Minería, Salud…). */
+  Area = 'AREA',
 }
 
 export enum AccionAudit {
