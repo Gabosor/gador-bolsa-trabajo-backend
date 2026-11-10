@@ -4,10 +4,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, In, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { AuditService } from '../auditoria/audit.service';
 import { CatalogosService } from '../catalogos/catalogos.service';
-import { Habilidad } from '../catalogos/entities/habilidad.entity';
 import { AccionAudit, TipoCatalogo } from '../common/enums';
 import { hoyBolivia } from '../common/fechas';
 import { R2Service } from '../storage/r2.service';
@@ -54,8 +53,6 @@ export class PostulantesService {
   constructor(
     @InjectRepository(PostulanteProfile)
     private readonly perfiles: Repository<PostulanteProfile>,
-    @InjectRepository(Habilidad)
-    private readonly habilidades: Repository<Habilidad>,
     private readonly dataSource: DataSource,
     private readonly catalogos: CatalogosService,
     private readonly r2: R2Service,
@@ -238,17 +235,9 @@ export class PostulantesService {
     dto: HabilidadesPerfilDto,
     ip: string,
   ) {
-    const ids = dto.habilidades.map((h) => h.habilidadId);
-    if (new Set(ids).size !== ids.length) {
-      throw new BadRequestException('Hay habilidades repetidas');
-    }
-    const validas = await this.habilidades.findBy({
-      id: In(ids),
-      activo: true,
-    });
-    if (validas.length !== ids.length) {
-      throw new BadRequestException('Alguna habilidad no es válida');
-    }
+    const validas = await this.catalogos.exigirHabilidades(
+      dto.habilidades.map((h) => h.habilidadId),
+    );
     const perfil = await this.deUsuario(userId);
     return this.guardar(perfil.id, async (manager) => {
       await manager.delete(PostulanteHabilidad, { profile: { id: perfil.id } });

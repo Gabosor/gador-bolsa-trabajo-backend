@@ -15,7 +15,8 @@ import { Roles } from '../common/enums';
 import { User } from '../users/entities/user.entity';
 import { CatalogosAdminService } from './catalogos-admin.service';
 import {
-  ActualizarItemDto,
+  ActualizarCatalogoDto,
+  ActualizarHabilidadDto,
   ConfiguracionDto,
   CrearCatalogoDto,
   CrearHabilidadDto,
@@ -46,7 +47,7 @@ export class CatalogosAdminController {
   @Auth(Roles.SuperAdmin)
   actualizarCatalogo(
     @Param('id', ParseIntPipe) id: number,
-    @Body() dto: ActualizarItemDto,
+    @Body() dto: ActualizarCatalogoDto,
     @GetUser() user: User,
     @Ip() ip: string,
   ) {
@@ -73,7 +74,7 @@ export class CatalogosAdminController {
   @Auth(Roles.SuperAdmin)
   actualizarHabilidad(
     @Param('id', ParseIntPipe) id: number,
-    @Body() dto: ActualizarItemDto,
+    @Body() dto: ActualizarHabilidadDto,
     @GetUser() user: User,
     @Ip() ip: string,
   ) {

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -44,6 +45,7 @@ export function coincideTipoReal(tipo: string, contenido: Buffer): boolean {
 
 @Injectable()
 export class R2Service {
+  private readonly logger = new Logger(R2Service.name);
   private readonly client: S3Client;
   private readonly bucket?: string;
 
@@ -101,6 +103,23 @@ export class R2Service {
       new GetObjectCommand({ Bucket: this.bucketConfigurado(), Key: key }),
       { expiresIn: segundos },
     );
+  }
+
+  /**
+   * Como getSignedUrl, pero nunca falla: sin archivo o sin almacenamiento
+   * configurado devuelve null. Sirve para extras como el logo de una lista.
+   */
+  async urlOpcional(
+    key: string | null,
+    segundos = 300,
+  ): Promise<string | null> {
+    if (!key) return null;
+    try {
+      return await this.getSignedUrl(key, segundos);
+    } catch (error) {
+      this.logger.warn(`No se pudo firmar ${key}: ${String(error)}`);
+      return null;
+    }
   }
 
   async delete(key: string): Promise<void> {

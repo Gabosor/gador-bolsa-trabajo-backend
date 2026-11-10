@@ -1,4 +1,4 @@
-import { EstadoEmpresa, EstadoPostulacion } from './enums';
+import { EstadoEmpresa, EstadoPostulacion, TipoCatalogo } from './enums';
 
 /** Nombres que ve el usuario en correos, WhatsApp y avisos. */
 export const NOMBRE_ESTADO_POSTULACION: Record<EstadoPostulacion, string> = {
@@ -16,4 +16,21 @@ export const NOMBRE_ESTADO_EMPRESA: Record<EstadoEmpresa, string> = {
   [EstadoEmpresa.Aprobada]: 'aprobada',
   [EstadoEmpresa.Rechazada]: 'rechazada',
   [EstadoEmpresa.Suspendida]: 'suspendida',
+};
+
+/** Nombre con artículo y género, para los mensajes de validación. */
+export const NOMBRE_TIPO_CATALOGO: Record<
+  TipoCatalogo,
+  { nombre: string; femenino: boolean }
+> = {
+  [TipoCatalogo.Rubro]: { nombre: 'el rubro', femenino: false },
+  [TipoCatalogo.Profesion]: { nombre: 'la profesión', femenino: true },
+  [TipoCatalogo.TipoContrato]: {
+    nombre: 'el tipo de contrato',
+    femenino: false,
+  },
+  [TipoCatalogo.Modalidad]: { nombre: 'la modalidad', femenino: true },
+  [TipoCatalogo.Departamento]: { nombre: 'el departamento', femenino: false },
+  [TipoCatalogo.Municipio]: { nombre: 'el municipio', femenino: false },
+  [TipoCatalogo.Area]: { nombre: 'el área', femenino: true },
 };

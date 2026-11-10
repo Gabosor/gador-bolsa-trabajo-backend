@@ -1,4 +1,5 @@
 import * as bcrypt from 'bcrypt';
+import { ConfigService } from '@nestjs/config';
 import { EntityManager } from 'typeorm';
 import dataSource from './data-source';
 import { AuditLog } from '../auditoria/entities/audit-log.entity';
@@ -22,285 +23,145 @@ import { Experiencia } from '../postulantes/entities/experiencia.entity';
 import { Formacion } from '../postulantes/entities/formacion.entity';
 import { PostulanteHabilidad } from '../postulantes/entities/postulante-habilidad.entity';
 import { PostulanteProfile } from '../postulantes/entities/postulante-profile.entity';
+import { CarpetaArchivo, R2Service } from '../storage/r2.service';
 import { Role } from '../users/entities/role.entity';
 import { User } from '../users/entities/user.entity';
+import { documentoPdf, logoPng } from './demo/archivos';
+import { EMPRESAS, OFERTAS, OfertaDemo, PERSONAS } from './demo/datos';
 
 /**
- * Datos de ejemplo para la demostración. Todas las personas y empresas son
- * ficticias y los correos usan el dominio reservado example.com.
- * La contraseña se lee de DEMO_PASSWORD; nunca se escribe en el código.
+ * Datos de ejemplo para la demostración (ver demo/datos.ts).
+ *
+ *   npm run seed:demo             crea los datos si no existen
+ *   npm run seed:demo -- --reset  borra los datos demo y los vuelve a crear
+ *
+ * La contraseña de todas las cuentas se lee de DEMO_PASSWORD. Si R2 está
+ * configurado, se suben logos y PDFs ficticios; si no, se crean sin archivos.
  */
-const EMPRESAS = [
-  {
-    razon: 'Sistemas Uru Digital S.R.L.',
-    rubro: 'Tecnología',
-    estado: EstadoEmpresa.Aprobada,
-  },
-  {
-    razon: 'Servicios Mineros Pampa Sur S.R.L.',
-    rubro: 'Minería',
-    estado: EstadoEmpresa.Aprobada,
-  },
-  {
-    razon: 'Comercial Paria Ltda.',
-    rubro: 'Comercio',
-    estado: EstadoEmpresa.Aprobada,
-  },
-  {
-    razon: 'Clínica Altiplano Sur S.R.L.',
-    rubro: 'Salud',
-    estado: EstadoEmpresa.Aprobada,
-  },
-  {
-    razon: 'Instituto Técnico Cuatro Vientos',
-    rubro: 'Educación',
-    estado: EstadoEmpresa.Pendiente,
-  },
-  {
-    razon: 'Constructora Meseta Norte S.A.',
-    rubro: 'Construcción',
-    estado: EstadoEmpresa.Rechazada,
-  },
-];
-
-const PROFESIONES = [
-  'Ingeniería de Sistemas',
-  'Ingeniería Informática',
-  'Ingeniería de Software',
-  'Técnico Superior en Sistemas Informáticos',
-  'Ingeniería en Redes y Telecomunicaciones',
-];
-
-const PERSONAS = [
-  'Ana Choque Mamani',
-  'Luis Flores Quispe',
-  'Carla Condori Vargas',
-  'Jorge Colque Rojas',
-  'María Huanca Torrez',
-  'Diego Mamani Ayala',
-  'Paola Quispe Salazar',
-  'Marco Villca Arce',
-  'Sofía Gutiérrez Choque',
-  'Rubén Calle Poma',
-  'Daniela Ticona Lima',
-  'Iván Apaza Rocha',
-  'Lucía Mollo Fernández',
-  'Óscar Cruz Yucra',
-];
-
-/** Grupos de habilidades con nivel; cada postulante recibe uno. */
-const PERFILES: [string, number][][] = [
-  [
-    ['JavaScript', 3],
-    ['TypeScript', 2],
-    ['Vue.js', 3],
-    ['Git', 2],
-  ],
-  [
-    ['PHP', 3],
-    ['Laravel', 3],
-    ['MySQL', 2],
-    ['Git', 2],
-  ],
-  [
-    ['Python', 3],
-    ['Django', 2],
-    ['PostgreSQL', 2],
-    ['Docker', 1],
-  ],
-  [
-    ['Redes', 3],
-    ['Linux', 3],
-    ['Soporte técnico', 2],
-  ],
-  [
-    ['NestJS', 2],
-    ['TypeScript', 3],
-    ['PostgreSQL', 3],
-    ['Docker', 2],
-  ],
-  [
-    ['Java', 2],
-    ['MySQL', 2],
-    ['Git', 1],
-    ['Linux', 1],
-  ],
-];
-
-interface OfertaDemo {
-  titulo: string;
-  empresa: number;
-  estado: EstadoOferta;
-  profesiones: number[];
-  habilidades: [string, boolean, number][];
-  contrato: string;
-  modalidad: string;
-  municipio: string;
-  salario: [number, number] | null;
-  /** Días transcurridos desde que se creó. */
-  antiguedad: number;
-}
-
-const OFERTAS: OfertaDemo[] = [
-  {
-    titulo: 'Desarrollador Full Stack',
-    empresa: 0,
-    estado: EstadoOferta.Cerrada,
-    profesiones: [0, 1, 2],
-    habilidades: [
-      ['JavaScript', true, 2],
-      ['Vue.js', true, 2],
-      ['PostgreSQL', false, 1],
-    ],
-    contrato: 'Indefinido',
-    modalidad: 'Híbrido',
-    municipio: 'Oruro',
-    salario: [6000, 9000],
-    antiguedad: 170,
-  },
-  {
-    titulo: 'Técnico de Soporte en Campamento',
-    empresa: 1,
-    estado: EstadoOferta.Cerrada,
-    profesiones: [3, 4],
-    habilidades: [
-      ['Soporte técnico', true, 2],
-      ['Redes', true, 1],
-      ['Linux', false, 1],
-    ],
-    contrato: 'Plazo fijo',
-    modalidad: 'Presencial',
-    municipio: 'Huanuni',
-    salario: [4000, 5500],
-    antiguedad: 135,
-  },
-  {
-    titulo: 'Desarrollador Laravel',
-    empresa: 2,
-    estado: EstadoOferta.Cerrada,
-    profesiones: [0, 2],
-    habilidades: [
-      ['PHP', true, 2],
-      ['Laravel', true, 2],
-      ['MySQL', true, 1],
-    ],
-    contrato: 'Consultoría',
-    modalidad: 'Remoto',
-    municipio: 'Oruro',
-    salario: null,
-    antiguedad: 40,
-  },
-  {
-    titulo: 'Administrador de Redes',
-    empresa: 1,
-    estado: EstadoOferta.EnProceso,
-    profesiones: [4, 0],
-    habilidades: [
-      ['Redes', true, 3],
-      ['Linux', true, 2],
-      ['Docker', false, 1],
-    ],
-    contrato: 'Indefinido',
-    modalidad: 'Presencial',
-    municipio: 'Challapata',
-    salario: [5500, 7500],
-    antiguedad: 75,
-  },
-  {
-    titulo: 'Analista de Datos Clínicos',
-    empresa: 3,
-    estado: EstadoOferta.EnProceso,
-    profesiones: [1, 2],
-    habilidades: [
-      ['Python', true, 2],
-      ['PostgreSQL', true, 2],
-      ['Django', false, 1],
-    ],
-    contrato: 'Plazo fijo',
-    modalidad: 'Híbrido',
-    municipio: 'Oruro',
-    salario: [5000, 7000],
-    antiguedad: 28,
-  },
-  {
-    titulo: 'Backend NestJS',
-    empresa: 0,
-    estado: EstadoOferta.Publicada,
-    profesiones: [0, 1, 2],
-    habilidades: [
-      ['NestJS', true, 2],
-      ['TypeScript', true, 2],
-      ['Docker', false, 1],
-    ],
-    contrato: 'Indefinido',
-    modalidad: 'Remoto',
-    municipio: 'Oruro',
-    salario: [7000, 10000],
-    antiguedad: 7,
-  },
-  {
-    titulo: 'Pasante de Desarrollo Web',
-    empresa: 2,
-    estado: EstadoOferta.Publicada,
-    profesiones: [3, 0],
-    habilidades: [
-      ['JavaScript', true, 1],
-      ['Git', false, 1],
-    ],
-    contrato: 'Pasantía',
-    modalidad: 'Presencial',
-    municipio: 'Oruro',
-    salario: [2500, 3000],
-    antiguedad: 5,
-  },
-  {
-    titulo: 'Soporte Técnico de Sistemas Hospitalarios',
-    empresa: 3,
-    estado: EstadoOferta.Publicada,
-    profesiones: [3],
-    habilidades: [
-      ['Soporte técnico', true, 2],
-      ['MySQL', false, 1],
-    ],
-    contrato: 'Plazo fijo',
-    modalidad: 'Presencial',
-    municipio: 'Caracollo',
-    salario: null,
-    antiguedad: 3,
-  },
-  {
-    titulo: 'Programador Java',
-    empresa: 1,
-    estado: EstadoOferta.EnRevision,
-    profesiones: [0, 1],
-    habilidades: [
-      ['Java', true, 2],
-      ['MySQL', true, 1],
-    ],
-    contrato: 'Indefinido',
-    modalidad: 'Híbrido',
-    municipio: 'Oruro',
-    salario: [6000, 8000],
-    antiguedad: 1,
-  },
-  {
-    titulo: 'Desarrollador Frontend Vue',
-    empresa: 0,
-    estado: EstadoOferta.Borrador,
-    profesiones: [2],
-    habilidades: [['Vue.js', true, 2]],
-    contrato: 'Consultoría',
-    modalidad: 'Remoto',
-    municipio: 'Oruro',
-    salario: null,
-    antiguedad: 0,
-  },
-];
+const CORREOS_DEMO = 'demo.%@example.com';
+const PDF = 'application/pdf';
 
 const DIA = 24 * 60 * 60 * 1000;
 const haceDias = (dias: number) => new Date(Date.now() - dias * DIA);
 const fechaEn = (dias: number) =>
   new Date(Date.now() + dias * DIA).toISOString().slice(0, 10);
+const dos = (n: number) => String(n).padStart(2, '0');
+
+/** Sube archivos a R2; si no está disponible, sigue sin ellos. */
+class Almacen {
+  private r2: R2Service | null = new R2Service(new ConfigService());
+  readonly subidos: string[] = [];
+
+  get activo() {
+    return this.r2 !== null;
+  }
+
+  async subir(carpeta: CarpetaArchivo, buffer: Buffer, tipo: string) {
+    if (!this.r2) return null;
+    try {
+      const key = await this.r2.upload(carpeta, {
+        buffer,
+        mimetype: tipo,
+        size: buffer.length,
+      } as Express.Multer.File);
+      this.subidos.push(key);
+      return key;
+    } catch (error) {
+      console.warn(
+        `No se pudo subir a R2 (${(error as Error).message}). Se continúa sin archivos.`,
+      );
+      this.r2 = null;
+      return null;
+    }
+  }
+
+  async borrar(keys: string[]) {
+    if (!this.r2) return;
+    for (const key of keys) {
+      try {
+        await this.r2.delete(key);
+      } catch (error) {
+        console.warn(`No se pudo borrar ${key}: ${(error as Error).message}`);
+      }
+    }
+  }
+}
+
+interface ArchivosEmpresa {
+  logo: string | null;
+  nit: string | null;
+  legal: string | null;
+}
+
+/** Genera y sube los archivos antes de abrir la transacción. */
+async function subirArchivos(almacen: Almacen) {
+  const empresas: ArchivosEmpresa[] = [];
+  for (const [i, e] of EMPRESAS.entries()) {
+    const nit = `9000000${dos(i + 1)}`;
+    const datos = [
+      `Razón social: ${e.razon}`,
+      `NIT: ${nit}`,
+      `Rubro: ${e.rubro}`,
+      'Domicilio: Oruro, Bolivia',
+    ];
+    empresas.push({
+      logo: e.logo
+        ? await almacen.subir(
+            'logos',
+            logoPng(e.logo.color, e.logo.figura),
+            'image/png',
+          )
+        : null,
+      nit: await almacen.subir(
+        'documentos',
+        await documentoPdf('Certificado de inscripción (NIT)', datos),
+        PDF,
+      ),
+      legal: await almacen.subir(
+        'documentos',
+        await documentoPdf('Testimonio de constitución', [
+          ...datos,
+          `Representante legal: Representante ${e.razon}`,
+        ]),
+        PDF,
+      ),
+    });
+  }
+  const cvs: (string | null)[] = [];
+  for (const p of PERSONAS) {
+    cvs.push(
+      p.cv
+        ? await almacen.subir(
+            'cv',
+            await documentoPdf(`Hoja de vida: ${p.nombre}`, [
+              `Profesión: ${p.profesion} (${p.institucion})`,
+              `Último cargo: ${p.cargo} en ${p.empresaAnterior}, ${p.anios} años`,
+              `Habilidades: ${p.habilidades.map(([h]) => h).join(', ')}`,
+              p.experiencia.replace(/\*\*/g, ''),
+            ]),
+            PDF,
+          )
+        : null,
+    );
+  }
+  return { empresas, cvs };
+}
+
+/** Textos de la oferta con el formato del editor (o planos, si así se pide). */
+function textos(o: OfertaDemo) {
+  const lista = (items: string[] | undefined, numerada = false) =>
+    items?.length
+      ? o.textoPlano
+        ? items.join(' ')
+        : items.map((t, i) => `${numerada ? `${i + 1}.` : '-'} ${t}`).join('\n')
+      : null;
+  return {
+    descripcion: o.descripcion,
+    requisitosObligatorios: lista(o.requisitos) ?? '',
+    requisitosDeseables: lista(o.deseables),
+    beneficios: lista(o.beneficios, true),
+  };
+}
 
 /** Estado de la postulación según su lugar en el ranking de MATCH. */
 function estadoSegunRanking(estado: EstadoOferta, lugar: number) {
@@ -331,7 +192,66 @@ function estadoSegunRanking(estado: EstadoOferta, lugar: number) {
   return [Visto, Postulado, Postulado, Postulado, Postulado, Postulado][lugar];
 }
 
-async function crear(manager: EntityManager, password: string, admin: User) {
+/**
+ * Borra los datos demo (usuarios demo.*@example.com y todo lo que cuelga de
+ * ellos). Devuelve las claves de R2 para borrarlas tras el commit.
+ */
+async function reiniciar(manager: EntityManager): Promise<string[]> {
+  const ids = async (sql: string, params: unknown[]) =>
+    (await manager.query<{ id: number }[]>(sql, params)).map((r) => r.id);
+
+  const usuarios = await ids('SELECT id FROM users WHERE email LIKE $1', [
+    CORREOS_DEMO,
+  ]);
+  if (!usuarios.length) return [];
+  type Fila = Record<string, string | number | null>;
+  const empresas = await manager.query<Fila[]>(
+    `SELECT id, logo_key, documento_nit_key, documento_legal_key
+       FROM empresas WHERE user_id = ANY($1)`,
+    [usuarios],
+  );
+  const perfiles = await manager.query<Fila[]>(
+    'SELECT id, cv_key, foto_key FROM postulante_profiles WHERE user_id = ANY($1)',
+    [usuarios],
+  );
+  const idsEmpresas = empresas.map((e) => e.id);
+  const idsPerfiles = perfiles.map((p) => p.id);
+  const ofertas = await ids(
+    'SELECT id FROM ofertas WHERE empresa_id = ANY($1)',
+    [idsEmpresas],
+  );
+
+  // Sin cascada en estas FK: el orden importa.
+  const postulaciones = await ids(
+    `DELETE FROM postulaciones
+      WHERE oferta_id = ANY($1) OR postulante_id = ANY($2) RETURNING id`,
+    [ofertas, idsPerfiles],
+  );
+  await manager.query('DELETE FROM ofertas WHERE id = ANY($1)', [ofertas]);
+  await manager.query('DELETE FROM empresas WHERE id = ANY($1)', [idsEmpresas]);
+  await manager.query('DELETE FROM users WHERE id = ANY($1)', [usuarios]);
+  await manager.query(
+    `DELETE FROM audit_logs
+      WHERE user_id = ANY($1)
+         OR (tabla_afectada = 'users' AND registro_id = ANY($1))
+         OR (tabla_afectada = 'empresas' AND registro_id = ANY($2))
+         OR (tabla_afectada = 'ofertas' AND registro_id = ANY($3))
+         OR (tabla_afectada = 'postulaciones' AND registro_id = ANY($4))`,
+    [usuarios, idsEmpresas, ofertas, postulaciones],
+  );
+
+  return [...empresas, ...perfiles]
+    .flatMap((fila) => Object.entries(fila))
+    .filter(([columna, valor]) => columna !== 'id' && typeof valor === 'string')
+    .map(([, valor]) => valor as string);
+}
+
+async function crear(
+  manager: EntityManager,
+  password: string,
+  admin: User,
+  archivos: Awaited<ReturnType<typeof subirArchivos>>,
+) {
   const catalogos = await manager.find(Catalogo);
   const habilidades = await manager.find(Habilidad);
   const catalogo = (tipo: TipoCatalogo, nombre: string) => {
@@ -351,12 +271,12 @@ async function crear(manager: EntityManager, password: string, admin: User) {
   const rolEmpresa = await rolDe(Roles.Empresa);
   const empresas: Empresa[] = [];
   for (const [i, datos] of EMPRESAS.entries()) {
-    const n = i + 1;
+    const n = dos(i + 1);
     const user = await manager.save(
       manager.create(User, {
         nombreCompleto: `Representante ${datos.razon}`,
-        email: `demo.empresa${n}@example.com`,
-        celular: `7100000${n}`,
+        email: `demo.empresa${i + 1}@example.com`,
+        celular: `710000${n}`,
         password,
         phoneVerified: true,
         role: rolEmpresa,
@@ -365,21 +285,23 @@ async function crear(manager: EntityManager, password: string, admin: User) {
     const empresa = await manager.save(
       manager.create(Empresa, {
         user,
-        nit: `90000000${n}`,
+        nit: `9000000${n}`,
         razonSocial: datos.razon,
         rubro: catalogo(TipoCatalogo.Rubro, datos.rubro),
         representanteLegal: user.nombreCompleto,
-        ciRepresentante: `8000000${n}`,
+        ciRepresentante: `800000${n}`,
         celular: user.celular,
         emailCorporativo: user.email,
-        direccion: `Calle Bolívar ${100 + n}, Oruro`,
-        descripcion: `Empresa ficticia del rubro ${datos.rubro} para la demostración.`,
+        direccion: `Calle Bolívar ${100 + i}, Oruro`,
+        descripcion: datos.descripcion,
+        logoKey: archivos.empresas[i].logo,
+        documentoNitKey: archivos.empresas[i].nit,
+        documentoLegalKey: archivos.empresas[i].legal,
         estado: datos.estado,
-        motivoRechazo:
-          datos.estado === EstadoEmpresa.Rechazada
-            ? 'El documento NIT no es legible'
-            : null,
-        createdAt: haceDias(200 - i * 5),
+        motivoRechazo: datos.motivo ?? null,
+        createdAt: haceDias(
+          datos.estado === EstadoEmpresa.Pendiente ? 2 + i : 200 - i * 5,
+        ),
       }),
     );
     empresas.push(empresa);
@@ -399,69 +321,63 @@ async function crear(manager: EntityManager, password: string, admin: User) {
   const rolPostulante = await rolDe(Roles.Postulante);
   const postulantes: {
     perfil: PostulanteProfile;
-    grupo: [string, number][];
+    persona: (typeof PERSONAS)[number];
   }[] = [];
-  for (const [i, nombreCompleto] of PERSONAS.entries()) {
-    const n = i + 1;
+  for (const [i, persona] of PERSONAS.entries()) {
+    const n = dos(i + 1);
     const user = await manager.save(
       manager.create(User, {
-        nombreCompleto,
-        ci: `910000${String(n).padStart(2, '0')}`,
-        email: `demo.postulante${n}@example.com`,
-        celular: `720000${String(n).padStart(2, '0')}`,
+        nombreCompleto: persona.nombre,
+        ci: `910000${n}`,
+        email: `demo.postulante${i + 1}@example.com`,
+        celular: `720000${n}`,
         password,
         phoneVerified: true,
         role: rolPostulante,
       }),
     );
-    const grupo = PERFILES[i % PERFILES.length];
     const base = {
-      direccion: `Av. 6 de Agosto ${200 + n}, Oruro`,
-      fechaNacimiento: `${1990 + (i % 12)}-0${(i % 9) + 1}-15`,
+      direccion: `Av. 6 de Agosto ${200 + i}, Oruro`,
+      fechaNacimiento: `${1988 + (i % 12)}-0${(i % 9) + 1}-15`,
       idiomas: [{ nombre: 'Inglés', nivel: i % 2 ? 'Básico' : 'Intermedio' }],
     };
+    const cvKey = archivos.cvs[i];
     const perfil = await manager.save(
       manager.create(PostulanteProfile, {
         user,
         ...base,
-        // Sin foto ni CV: los archivos reales solo existen en R2.
+        cvKey,
         porcentajeCompletitud: calcularCompletitud({
           direccion: base.direccion,
           fechaNacimiento: base.fechaNacimiento,
           fotoKey: null,
-          cvKey: null,
+          cvKey,
           idiomas: 1,
           formaciones: 1,
           experiencias: 1,
-          habilidades: grupo.length,
+          habilidades: persona.habilidades.length,
         }),
       }),
     );
     await manager.save(
       manager.create(Formacion, {
         profile: perfil,
-        profesion: catalogo(
-          TipoCatalogo.Profesion,
-          PROFESIONES[i % PROFESIONES.length],
-        ),
-        institucion:
-          i % 3
-            ? 'Universidad Técnica de Oruro'
-            : 'Instituto Técnico Superior de Oruro',
-        anioTitulacion: 2012 + (i % 12),
-        nroTituloNacional: `DEMO-${1000 + n}`,
+        profesion: catalogo(TipoCatalogo.Profesion, persona.profesion),
+        institucion: persona.institucion,
+        anioTitulacion: 2024 - persona.anios,
+        nroTituloNacional: `DEMO-${1000 + i}`,
       }),
     );
     await manager.save(
       manager.create(Experiencia, {
         profile: perfil,
-        empresa: 'Empresa de ejemplo',
-        cargo: 'Técnico en sistemas',
-        anios: (i % 6) + 1,
-        descripcion: 'Desarrollo y mantenimiento de sistemas internos.',
+        empresa: persona.empresaAnterior,
+        cargo: persona.cargo,
+        anios: persona.anios,
+        descripcion: persona.experiencia,
       }),
     );
-    for (const [nombre, nivel] of grupo) {
+    for (const [nombre, nivel] of persona.habilidades) {
       await manager.save(
         manager.create(PostulanteHabilidad, {
           profile: perfil,
@@ -470,44 +386,40 @@ async function crear(manager: EntityManager, password: string, admin: User) {
         }),
       );
     }
-    postulantes.push({ perfil, grupo });
+    postulantes.push({ perfil, persona });
   }
 
   for (const [i, datos] of OFERTAS.entries()) {
     const empresa = empresas[datos.empresa];
     const creada = haceDias(datos.antiguedad);
-    const vigente = [
-      EstadoOferta.Publicada,
-      EstadoOferta.EnProceso,
-      EstadoOferta.EnRevision,
-      EstadoOferta.Borrador,
-    ].includes(datos.estado);
+    const vigente = datos.estado !== EstadoOferta.Cerrada;
     const oferta = await manager.save(
       manager.create(Oferta, {
         empresa,
         titulo: datos.titulo,
-        descripcion: `${datos.titulo} para ${empresa.razonSocial}. Oferta ficticia de demostración.`,
-        requisitosObligatorios:
-          'Título profesional y experiencia comprobable en el área.',
-        requisitosDeseables: 'Disponibilidad inmediata.',
+        ...textos(datos),
         profesiones: datos.profesiones.map((p) =>
-          catalogo(TipoCatalogo.Profesion, PROFESIONES[p]),
+          catalogo(TipoCatalogo.Profesion, p),
         ),
-        aniosExperiencia: i % 4,
+        aniosExperiencia: datos.experiencia,
         tipoContrato: catalogo(TipoCatalogo.TipoContrato, datos.contrato),
         modalidad: catalogo(TipoCatalogo.Modalidad, datos.modalidad),
         municipio: catalogo(TipoCatalogo.Municipio, datos.municipio),
         salarioMin: datos.salario?.[0] ?? null,
         salarioMax: datos.salario?.[1] ?? null,
         salarioATratar: datos.salario === null,
-        beneficios: 'Seguro de salud y aguinaldo.',
         fechaCierre: vigente
           ? fechaEn(20 + i)
           : fechaEn(-(datos.antiguedad - 30)),
         numeroPlazas: 1,
         estado: datos.estado,
-        totalVistas: datos.estado === EstadoOferta.Borrador ? 0 : 25 + i * 13,
+        totalVistas: [EstadoOferta.Borrador, EstadoOferta.EnRevision].includes(
+          datos.estado,
+        )
+          ? 0
+          : 25 + i * 13,
         createdAt: creada,
+        updatedAt: creada,
       }),
     );
     for (const [nombre, obligatoria, nivelMinimo] of datos.habilidades) {
@@ -548,6 +460,7 @@ async function crear(manager: EntityManager, password: string, admin: User) {
       });
     }
 
+    // Postulan los del mismo campo, ordenados por MATCH.
     const requeridas = datos.habilidades.map(
       ([nombre, obligatoria, nivelMinimo]) => ({
         habilidadId: habilidad(nombre).id,
@@ -555,14 +468,12 @@ async function crear(manager: EntityManager, password: string, admin: User) {
         nivelMinimo,
       }),
     );
-    const candidatos = Array.from(
-      { length: 6 },
-      (_, j) => postulantes[(i * 3 + j) % postulantes.length],
-    )
-      .map(({ perfil, grupo }) => ({
+    const candidatos = postulantes
+      .filter(({ persona }) => persona.grupo === datos.grupo)
+      .map(({ perfil, persona }) => ({
         perfil,
         match: calcularMatch(
-          grupo.map(([nombre, nivel]) => ({
+          persona.habilidades.map(([nombre, nivel]) => ({
             habilidadId: habilidad(nombre).id,
             nivel,
           })),
@@ -584,24 +495,71 @@ async function crear(manager: EntityManager, password: string, admin: User) {
   }
 }
 
+function imprimirCuentas() {
+  console.log('\nCuentas (contraseña: la de DEMO_PASSWORD)');
+  console.table([
+    ...EMPRESAS.map((e, i) => ({
+      correo: `demo.empresa${i + 1}@example.com`,
+      rol: 'Empresa',
+      detalle: `${e.razon} (${e.estado})`,
+    })),
+    ...PERSONAS.map((p, i) => ({
+      correo: `demo.postulante${i + 1}@example.com`,
+      rol: 'Postulante',
+      detalle: `${p.nombre}, ${p.profesion}`,
+    })),
+  ]);
+}
+
 async function seedDemo() {
   const demoPassword = process.env.DEMO_PASSWORD;
   if (!demoPassword) throw new Error('Define DEMO_PASSWORD en el archivo .env');
+  const reset = process.argv.includes('--reset');
   await dataSource.initialize();
-  const users = dataSource.getRepository(User);
-  if (await users.existsBy({ email: 'demo.empresa1@example.com' })) {
-    console.log('Los datos de ejemplo ya existen; no se hizo ningún cambio');
+  try {
+    const users = dataSource.getRepository(User);
+    const existen = await users.existsBy({
+      email: 'demo.empresa1@example.com',
+    });
+    if (existen && !reset) {
+      console.log(
+        'Los datos de ejemplo ya existen. Para recrearlos: npm run seed:demo -- --reset',
+      );
+      return;
+    }
+    const admin = await users.findOne({
+      where: { role: { nombre: Roles.SuperAdmin } },
+    });
+    if (!admin) throw new Error('Ejecuta primero npm run seed');
+
+    const almacen = new Almacen();
+    if (reset) {
+      const viejas = await dataSource.transaction(reiniciar);
+      await almacen.borrar(viejas);
+      console.log(
+        `Datos demo anteriores borrados (${viejas.length} archivos).`,
+      );
+    }
+
+    const archivos = await subirArchivos(almacen);
+    if (!almacen.activo) console.warn('Los datos se crearán sin archivos.');
+    const password = await bcrypt.hash(demoPassword, 12);
+    try {
+      await dataSource.transaction((manager) =>
+        crear(manager, password, admin, archivos),
+      );
+    } catch (error) {
+      // No dejar archivos huérfanos en el bucket.
+      await almacen.borrar(almacen.subidos);
+      throw error;
+    }
+    console.log(
+      `Datos de ejemplo creados (${almacen.subidos.length} archivos en R2).`,
+    );
+    imprimirCuentas();
+  } finally {
     await dataSource.destroy();
-    return;
   }
-  const admin = await users.findOne({
-    where: { role: { nombre: Roles.SuperAdmin } },
-  });
-  if (!admin) throw new Error('Ejecuta primero npm run seed');
-  const password = await bcrypt.hash(demoPassword, 12);
-  await dataSource.transaction((manager) => crear(manager, password, admin));
-  await dataSource.destroy();
-  console.log('Datos de ejemplo creados');
 }
 
 seedDemo().catch((error) => {

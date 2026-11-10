@@ -44,6 +44,12 @@ export class OfertasController {
     return this.ofertas.listarRevision(filtro);
   }
 
+  @Get('revision/:id')
+  @Auth(Roles.SuperAdmin)
+  detalleRevision(@Param('id', ParseIntPipe) id: number) {
+    return this.ofertas.detalleRevision(id);
+  }
+
   @Get()
   buscar(@Query() filtro: BuscarOfertasDto) {
     return this.ofertas.buscar(filtro);
