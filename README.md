@@ -21,10 +21,11 @@ cp .env.example .env     # completar con los valores propios
 npm run migration:run    # crea las tablas
 npm run seed             # roles, catálogos, configuración y SuperAdmin
 npm run seed:demo        # opcional: empresas, postulantes y ofertas ficticias
+                         # con -- --reset borra los datos demo y los vuelve a crear
 npm run start:dev        # http://localhost:4000/api
 ```
 
-Las credenciales viven solo en `.env`, que Git ignora. El SuperAdmin inicial se crea con `ADMIN_EMAIL` y `ADMIN_PASSWORD`; las cuentas de ejemplo usan `DEMO_PASSWORD`.
+Las credenciales viven solo en `.env`, que Git ignora. El SuperAdmin inicial se crea con `ADMIN_EMAIL` y `ADMIN_PASSWORD`; las cuentas de ejemplo usan `DEMO_PASSWORD`. Si R2 está configurado, `seed:demo` también sube logos y PDFs ficticios.
 
 Para generar las claves push: `npx web-push generate-vapid-keys`.
 
@@ -34,11 +35,13 @@ Para generar las claves push: `npx web-push generate-vapid-keys`.
 |---|---|
 | `npm run start:dev` | Desarrollo con recarga |
 | `npm run build` | Compila en `dist/` |
-| `npm test` | Pruebas de autenticación, % perfil, % MATCH, transiciones de estado, correo, WhatsApp y notificaciones |
+| `npm test` | Pruebas de autenticación, % perfil, % MATCH, transiciones de estado, correo, WhatsApp, notificaciones, reportes, catálogos con áreas y archivos de ejemplo |
 | `npm run migration:run` | Aplica migraciones |
 | `npm run migration:generate` | Genera una migración desde las entidades |
-| `npm run seed` / `npm run seed:demo` | Datos iniciales / datos de ejemplo |
+| `npm run seed` / `npm run seed:demo` | Datos iniciales / datos de ejemplo (`-- --reset` los recrea) |
 | `npm run migration:run:prod`, `seed:prod`, `seed:demo:prod` | Equivalentes sobre `dist/`, para producción |
+
+La imagen de producción solo contiene `dist/`: dentro del contenedor se usan los comandos `:prod` (por ejemplo `npm run seed:demo:prod -- --reset`). Los demás necesitan `ts-node` y el código fuente, así que solo funcionan en local.
 
 ## Estructura
 
@@ -53,11 +56,11 @@ src/
   postulaciones/   postular, % MATCH y selección
   notificaciones/  avisos internos, correo, push, WhatsApp y aviso de 24 h
   dashboard/       indicadores de GADOR
-  reportes/        Excel y PDF con membrete
+  reportes/        Excel y PDF con membrete y escudo
   catalogos/       catálogos y configuración
   auditoria/       registro y visor de auditoría
   storage/         archivos en Cloudflare R2
-  database/        migraciones y seeders
+  database/        migraciones, seeders y datos de ejemplo (demo/)
 ```
 
 ## Documentación
